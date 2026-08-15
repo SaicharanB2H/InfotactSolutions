@@ -1,8 +1,66 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+
+import { loginUser } from "../../services/authService";
+import { useAuth } from "../../context/AuthContext";
 
 function Login() {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
   const [showPassword, setShowPassword] = useState(false);
+
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
+
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Handle input changes
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    setError("");
+  };
+
+  // Handle login
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!formData.email || !formData.password) {
+      setError("Please enter email and password.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const data = await loginUser(formData);
+
+      // Save JWT and user information
+      login(data.token, data.user);
+
+      // Go to dashboard
+      navigate("/dashboard");
+    } catch (error) {
+      console.error("Login failed:", error);
+
+      setError(
+        error.response?.data?.message ||
+          "Unable to login. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
@@ -19,8 +77,15 @@ function Login() {
           </p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-5 rounded-lg bg-red-100 px-4 py-3 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+
         {/* Login Form */}
-        <form className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5">
 
           {/* Email */}
           <div>
@@ -33,7 +98,10 @@ function Login() {
 
             <input
               id="email"
+              name="email"
               type="email"
+              value={formData.email}
+              onChange={handleChange}
               placeholder="Enter your email"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
                          focus:outline-none focus:ring-2 focus:ring-blue-500
@@ -53,7 +121,10 @@ function Login() {
             <div className="relative">
               <input
                 id="password"
+                name="password"
                 type={showPassword ? "text" : "password"}
+                value={formData.password}
+                onChange={handleChange}
                 placeholder="Enter your password"
                 className="w-full px-4 py-3 pr-16 border border-gray-300
                            rounded-lg focus:outline-none focus:ring-2
@@ -94,10 +165,12 @@ function Login() {
           {/* Login Button */}
           <button
             type="submit"
+            disabled={loading}
             className="w-full bg-blue-600 text-white py-3 rounded-lg
-                       font-semibold hover:bg-blue-700 transition"
+                       font-semibold hover:bg-blue-700 transition
+                       disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
 
         </form>
