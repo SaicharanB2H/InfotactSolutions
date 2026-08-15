@@ -1,7 +1,9 @@
+import { registerUser } from "../../services/authService";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function Register() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -57,7 +59,7 @@ function Register() {
     return newErrors;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const validationErrors = validateForm();
@@ -69,7 +71,29 @@ function Register() {
 
     console.log("Registration form:", formData);
 
-    alert("Registration form is valid!");
+  
+
+    try {
+  const data = await registerUser({
+    name: formData.name,
+    email: formData.email,
+    password: formData.password,
+  });
+
+  console.log("Registration successful:", data);
+
+  alert("Registration successful! Please login.");
+
+  navigate("/login");
+} catch (error) {
+  console.error("Registration failed:", error);
+
+  alert(
+    error.response?.data?.message ||
+      "Registration failed. Please try again."
+  );
+}
+
   };
 
   return (
@@ -241,7 +265,7 @@ function Register() {
           Already have an account?{" "}
 
           <Link
-            to="/"
+            to="/login"
             className="text-blue-600 font-semibold hover:underline"
           >
             Login
