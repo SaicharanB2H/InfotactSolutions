@@ -1,3 +1,6 @@
+import Sidebar from "../../components/Sidebar";
+import Navbar from "../../components/Navbar";
+
 const Dashboard = () => {
   const stats = [
     {
@@ -40,7 +43,13 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-100 flex">
+    <Sidebar />
+
+    <div className="flex-1">
+      <Navbar />
+
+      <main className="p-6"></main>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">
@@ -163,6 +172,7 @@ const Dashboard = () => {
           </table>
         </div>
       </div>
+    </div>
     </div>
   );
 };
