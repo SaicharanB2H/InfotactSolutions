@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import Login from "../pages/Login/Login";
 import Register from "../pages/Register/Register";
 import Dashboard from "../pages/Dashboard/Dashboard";
+import Upload from "../pages/Upload/Upload";
 import ProtectedRoute from "../components/ProtectedRoute";
 
 function AppRoutes() {
@@ -16,6 +17,7 @@ function AppRoutes() {
       {/* Protected Routes */}
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/upload" element={<Upload />} />
       </Route>
 
       {/* 404 Route */}
