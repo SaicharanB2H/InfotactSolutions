@@ -11,7 +11,7 @@ function Upload() {
   const [columns, setColumns] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
-
+const [isDragging, setIsDragging] = useState(false);
   // ==============================
   // OPEN FILE PICKER
   // ==============================
@@ -47,6 +47,59 @@ function Upload() {
 
     setFile(selectedFile);
   };
+
+  // ==============================
+// DRAG & DROP
+// ==============================
+
+const handleDragOver = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (!isUploading) {
+    setIsDragging(true);
+  }
+};
+
+const handleDragLeave = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  setIsDragging(false);
+};
+
+const handleDrop = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  setIsDragging(false);
+
+  if (isUploading) {
+    return;
+  }
+
+  const droppedFile = event.dataTransfer.files?.[0];
+
+  if (!droppedFile) {
+    return;
+  }
+
+  setError("");
+  setRows([]);
+  setColumns([]);
+  setProgress(0);
+
+  if (!droppedFile.name.toLowerCase().endsWith(".csv")) {
+    setError("Please select a CSV file.");
+    setFile(null);
+    return;
+  }
+
+  setFile(droppedFile);
+};
+
+
+
 
   // ==============================
   // UPLOAD + PARSE CSV
@@ -180,25 +233,36 @@ function Upload() {
       {/* =================================
           UPLOAD AREA
       ================================= */}
-      <div
-        className="
-          mt-8
-          flex
-          min-h-[240px]
-          flex-col
-          items-center
-          justify-center
-          rounded-xl
-          border-2
-          border-dashed
-          border-slate-300
-          bg-white
-        "
-      >
+ <div
+  onDragOver={handleDragOver}
+  onDragEnter={handleDragOver}
+  onDragLeave={handleDragLeave}
+  onDrop={handleDrop}
+  className={`
+    mt-8
+    flex
+    min-h-[240px]
+    flex-col
+    items-center
+    justify-center
+    rounded-xl
+    border-2
+    border-dashed
+    transition-all
+    duration-200
+    ${
+      isDragging
+        ? "border-blue-500 bg-blue-50 scale-[1.01]"
+        : "border-slate-300 bg-white"
+    }
+  `}
+>
 
-        <h2 className="text-2xl font-semibold text-slate-900">
-          Drag & Drop Files Here
-        </h2>
+       <h2 className="text-2xl font-semibold text-slate-900">
+  {isDragging
+    ? "Drop CSV File Here"
+    : "Drag & Drop Files Here"}
+</h2>
 
         <p className="mt-3 text-lg text-slate-500">
           or choose a file from your computer
