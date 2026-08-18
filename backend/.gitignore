@@ -4,3 +4,5 @@ uploads/
 *.log
 coverage/
 .DS_Store
+*.csv
+

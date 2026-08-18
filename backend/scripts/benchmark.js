@@ -9,7 +9,7 @@ const Pipeline = require('../src/models/pipeline.model');
 const Job = require('../src/models/job.model');
 const { runEtlJob } = require('../src/services/etl.service');
 
-const csvPath = process.argv[2] || path.join(__dirname, '../../large-dataset.csv');
+const csvPath = process.argv[2] || path.join(__dirname, '../large-dataset.csv');
 
 async function runBenchmark() {
   if (!fs.existsSync(csvPath)) {
