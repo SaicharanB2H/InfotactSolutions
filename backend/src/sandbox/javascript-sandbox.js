@@ -38,7 +38,7 @@ class JavascriptSandbox {
       `;
 
       const script = this.isolate.compileScriptSync(wrapped);
-      const fn = script.runSync(this.context);
+      const fn = script.runSync(this.context, { reference: true });
 
       if (typeof fn.applySync !== 'function') {
         throw new Error('User script did not return a valid function');
@@ -66,7 +66,11 @@ class JavascriptSandbox {
     const timeout = config.SANDBOX_TIMEOUT_MS || 100;
     
     // We execute the function synchronously within the isolate, enforcing memory/timeout limits
-    return fn.applySync(undefined, [value], { timeout });
+    return fn.applySync(undefined, [value], { 
+      timeout, 
+      arguments: { copy: true }, 
+      result: { copy: true } 
+    });
   }
 
   /**
