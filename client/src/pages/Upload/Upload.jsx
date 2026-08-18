@@ -3,6 +3,9 @@ import Papa from "papaparse";
 import { FixedSizeList } from "react-window";
 
 function Upload() {
+
+  const hasColumnsRef = useRef(false);
+const hasRowsRef = useRef(false);
   const fileInputRef = useRef(null);
 
   const [file, setFile] = useState(null);
@@ -12,6 +15,8 @@ function Upload() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
 const [isDragging, setIsDragging] = useState(false);
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
   // ==============================
   // OPEN FILE PICKER
   // ==============================
@@ -21,33 +26,59 @@ const [isDragging, setIsDragging] = useState(false);
     }
   };
 
+ // ==============================
+// CSV FILE VALIDATION
+// ==============================
+const validateCSVFile = (selectedFile) => {
+  if (!selectedFile) {
+    return "Please select a file.";
+  }
+
+  // Check file extension
+  if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+    return "Invalid file type. Please select a CSV file.";
+  }
+
+  // Check file size
+  if (selectedFile.size === 0) {
+    return "The selected CSV file is empty.";
+  }
+
+  // Maximum file size
+  if (selectedFile.size > MAX_FILE_SIZE) {
+    return "File is too large. Maximum allowed size is 10 MB.";
+  }
+
+  return "";
+}; 
+
   // ==============================
   // SELECT CSV FILE
   // ==============================
-  const handleFileChange = (event) => {
-    const selectedFile = event.target.files?.[0];
 
-    if (!selectedFile) {
-      return;
-    }
+const handleFileChange = (event) => {
+  const selectedFile = event.target.files?.[0];
 
-    // Reset previous data
-    setError("");
-    setRows([]);
-    setColumns([]);
-    setProgress(0);
+  if (!selectedFile) {
+    return;
+  }
 
-    // Check CSV
-    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
-      setError("Please select a CSV file.");
-      setFile(null);
-      event.target.value = "";
-      return;
-    }
+  setError("");
+  setRows([]);
+  setColumns([]);
+  setProgress(0);
 
-    setFile(selectedFile);
-  };
+  const validationError = validateCSVFile(selectedFile);
 
+  if (validationError) {
+    setError(validationError);
+    setFile(null);
+    event.target.value = "";
+    return;
+  }
+
+  setFile(selectedFile);
+};
   // ==============================
 // DRAG & DROP
 // ==============================
@@ -89,8 +120,10 @@ const handleDrop = (event) => {
   setColumns([]);
   setProgress(0);
 
-  if (!droppedFile.name.toLowerCase().endsWith(".csv")) {
-    setError("Please select a CSV file.");
+  const validationError = validateCSVFile(droppedFile);
+
+  if (validationError) {
+    setError(validationError);
     setFile(null);
     return;
   }
@@ -100,11 +133,14 @@ const handleDrop = (event) => {
 
 
 
-
   // ==============================
   // UPLOAD + PARSE CSV
   // ==============================
   const handleUpload = () => {
+
+     hasColumnsRef.current = false;
+hasRowsRef.current = false;
+
     if (!file) {
       setError("Please select a CSV file first.");
       return;
@@ -116,6 +152,8 @@ const handleDrop = (event) => {
     setRows([]);
     setColumns([]);
 
+   
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -125,24 +163,49 @@ const handleDrop = (event) => {
 
       // Each chunk
       chunk: (results) => {
+          // Check parsing errors
+  if (results.errors && results.errors.length > 0) {
+    console.warn("CSV parsing errors:", results.errors);
+  }
+
+  if (results.meta.fields && results.meta.fields.length > 0) {
+  hasColumnsRef.current = true;
+}
+
+if (results.data && results.data.length > 0) {
+  hasRowsRef.current = true;
+}
+
         // Get columns
-        if (results.meta.fields) {
-          setColumns((previousColumns) => {
-            if (previousColumns.length === 0) {
-              return results.meta.fields;
-            }
+        if (results.errors && results.errors.length > 0) {
+    console.warn("CSV parsing errors:", results.errors);
+  }
 
-            return previousColumns;
-          });
+  // Detect columns from parsed row
+  if (results.data && results.data.length > 0) {
+    const detectedColumns = Object.keys(results.data[0]);
+
+    if (detectedColumns.length > 0) {
+      hasColumnsRef.current = true;
+
+      setColumns((previousColumns) => {
+        if (previousColumns.length === 0) {
+          return detectedColumns;
         }
 
-        // Add rows
-        if (results.data && results.data.length > 0) {
-          setRows((previousRows) => [
-            ...previousRows,
-            ...results.data,
-          ]);
-        }
+        return previousColumns;
+      });
+    }
+
+    // CSV contains data
+    hasRowsRef.current = true;
+
+    setRows((previousRows) => [
+      ...previousRows,
+      ...results.data,
+    ]);
+  }
+        
 
         // Calculate progress
         if (file.size > 0) {
@@ -158,11 +221,26 @@ const handleDrop = (event) => {
       },
 
       // Completed
-      complete: () => {
-        setProgress(100);
-        setIsUploading(false);
-      },
+     complete: () => {
+  setProgress(100);
+  setIsUploading(false);
 
+   if (!hasColumnsRef.current) {
+    setError(
+      "Invalid CSV file. No header columns were found."
+    );
+    setRows([]);
+    setColumns([]);
+    return;
+  }
+
+  if (!hasRowsRef.current) {
+    setError(
+      "The CSV file does not contain any data rows."
+    );
+    return;
+  }
+},
       // Error
       error: (parseError) => {
         console.error("CSV Error:", parseError);
