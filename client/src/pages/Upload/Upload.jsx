@@ -3,9 +3,8 @@ import Papa from "papaparse";
 import { FixedSizeList } from "react-window";
 
 function Upload() {
-
   const hasColumnsRef = useRef(false);
-const hasRowsRef = useRef(false);
+  const hasRowsRef = useRef(false);
   const fileInputRef = useRef(null);
 
   const [file, setFile] = useState(null);
@@ -14,8 +13,8 @@ const hasRowsRef = useRef(false);
   const [columns, setColumns] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
-const [isDragging, setIsDragging] = useState(false);
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+  const [isDragging, setIsDragging] = useState(false);
+  const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
   // ==============================
   // OPEN FILE PICKER
@@ -26,120 +25,117 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
     }
   };
 
- // ==============================
-// CSV FILE VALIDATION
-// ==============================
-const validateCSVFile = (selectedFile) => {
-  if (!selectedFile) {
-    return "Please select a file.";
-  }
+  // ==============================
+  // CSV FILE VALIDATION
+  // ==============================
+  const validateCSVFile = (selectedFile) => {
+    if (!selectedFile) {
+      return "Please select a file.";
+    }
 
-  // Check file extension
-  if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
-    return "Invalid file type. Please select a CSV file.";
-  }
+    // Check file extension
+    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+      return "Invalid file type. Please select a CSV file.";
+    }
 
-  // Check file size
-  if (selectedFile.size === 0) {
-    return "The selected CSV file is empty.";
-  }
+    // Check file size
+    if (selectedFile.size === 0) {
+      return "The selected CSV file is empty.";
+    }
 
-  // Maximum file size
-  if (selectedFile.size > MAX_FILE_SIZE) {
-    return "File is too large. Maximum allowed size is 10 MB.";
-  }
+    // Maximum file size
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      return "File is too large. Maximum allowed size is 10 MB.";
+    }
 
-  return "";
-}; 
+    return "";
+  };
 
   // ==============================
   // SELECT CSV FILE
   // ==============================
 
-const handleFileChange = (event) => {
-  const selectedFile = event.target.files?.[0];
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files?.[0];
 
-  if (!selectedFile) {
-    return;
-  }
+    if (!selectedFile) {
+      return;
+    }
 
-  setError("");
-  setRows([]);
-  setColumns([]);
-  setProgress(0);
+    setError("");
+    setRows([]);
+    setColumns([]);
+    setProgress(0);
 
-  const validationError = validateCSVFile(selectedFile);
+    const validationError = validateCSVFile(selectedFile);
 
-  if (validationError) {
-    setError(validationError);
-    setFile(null);
-    event.target.value = "";
-    return;
-  }
+    if (validationError) {
+      setError(validationError);
+      setFile(null);
+      event.target.value = "";
+      return;
+    }
 
-  setFile(selectedFile);
-};
+    setFile(selectedFile);
+  };
   // ==============================
-// DRAG & DROP
-// ==============================
+  // DRAG & DROP
+  // ==============================
 
-const handleDragOver = (event) => {
-  event.preventDefault();
-  event.stopPropagation();
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
 
-  if (!isUploading) {
-    setIsDragging(true);
-  }
-};
+    if (!isUploading) {
+      setIsDragging(true);
+    }
+  };
 
-const handleDragLeave = (event) => {
-  event.preventDefault();
-  event.stopPropagation();
+  const handleDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
 
-  setIsDragging(false);
-};
+    setIsDragging(false);
+  };
 
-const handleDrop = (event) => {
-  event.preventDefault();
-  event.stopPropagation();
+  const handleDrop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
 
-  setIsDragging(false);
+    setIsDragging(false);
 
-  if (isUploading) {
-    return;
-  }
+    if (isUploading) {
+      return;
+    }
 
-  const droppedFile = event.dataTransfer.files?.[0];
+    const droppedFile = event.dataTransfer.files?.[0];
 
-  if (!droppedFile) {
-    return;
-  }
+    if (!droppedFile) {
+      return;
+    }
 
-  setError("");
-  setRows([]);
-  setColumns([]);
-  setProgress(0);
+    setError("");
+    setRows([]);
+    setColumns([]);
+    setProgress(0);
 
-  const validationError = validateCSVFile(droppedFile);
+    const validationError = validateCSVFile(droppedFile);
 
-  if (validationError) {
-    setError(validationError);
-    setFile(null);
-    return;
-  }
+    if (validationError) {
+      setError(validationError);
+      setFile(null);
+      return;
+    }
 
-  setFile(droppedFile);
-};
-
-
+    setFile(droppedFile);
+  };
 
   // ==============================
   // UPLOAD + PARSE CSV
   // ==============================
   const handleUpload = () => {
-
-     hasColumnsRef.current = false;
-hasRowsRef.current = false;
+    hasColumnsRef.current = false;
+    hasRowsRef.current = false;
 
     if (!file) {
       setError("Please select a CSV file first.");
@@ -152,68 +148,61 @@ hasRowsRef.current = false;
     setRows([]);
     setColumns([]);
 
-   
-
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
 
       // Process large CSV in chunks
-      chunkSize: 1024 * 1024,
+      chunkSize: 256 * 1024,
+      worker: true,
 
       // Each chunk
       chunk: (results) => {
-          // Check parsing errors
-  if (results.errors && results.errors.length > 0) {
-    console.warn("CSV parsing errors:", results.errors);
-  }
+        // Check parsing errors
+        if (results.errors && results.errors.length > 0) {
+          console.warn("CSV parsing errors:", results.errors);
+        }
 
-  if (results.meta.fields && results.meta.fields.length > 0) {
-  hasColumnsRef.current = true;
-}
+        if (results.meta.fields && results.meta.fields.length > 0) {
+          hasColumnsRef.current = true;
+        }
 
-if (results.data && results.data.length > 0) {
-  hasRowsRef.current = true;
-}
+        if (results.data && results.data.length > 0) {
+          hasRowsRef.current = true;
+        }
 
         // Get columns
         if (results.errors && results.errors.length > 0) {
-    console.warn("CSV parsing errors:", results.errors);
-  }
-
-  // Detect columns from parsed row
-  if (results.data && results.data.length > 0) {
-    const detectedColumns = Object.keys(results.data[0]);
-
-    if (detectedColumns.length > 0) {
-      hasColumnsRef.current = true;
-
-      setColumns((previousColumns) => {
-        if (previousColumns.length === 0) {
-          return detectedColumns;
+          console.warn("CSV parsing errors:", results.errors);
         }
 
-        return previousColumns;
-      });
-    }
+        // Detect columns from parsed row
+        if (results.data && results.data.length > 0) {
+          const detectedColumns = Object.keys(results.data[0]);
 
-    // CSV contains data
-    hasRowsRef.current = true;
+          if (detectedColumns.length > 0) {
+            hasColumnsRef.current = true;
 
-    setRows((previousRows) => [
-      ...previousRows,
-      ...results.data,
-    ]);
-  }
-        
+            setColumns((previousColumns) => {
+              if (previousColumns.length === 0) {
+                return detectedColumns;
+              }
+
+              return previousColumns;
+            });
+          }
+
+          // CSV contains data
+          hasRowsRef.current = true;
+
+          setRows((previousRows) => [...previousRows, ...results.data]);
+        }
 
         // Calculate progress
         if (file.size > 0) {
           const progressValue = Math.min(
-            Math.round(
-              (results.meta.cursor / file.size) * 100
-            ),
-            100
+            Math.round((results.meta.cursor / file.size) * 100),
+            100,
           );
 
           setProgress(progressValue);
@@ -221,26 +210,25 @@ if (results.data && results.data.length > 0) {
       },
 
       // Completed
-     complete: () => {
-  setProgress(100);
-  setIsUploading(false);
+      complete: () => {
+        setProgress(100);
 
-   if (!hasColumnsRef.current) {
-    setError(
-      "Invalid CSV file. No header columns were found."
-    );
-    setRows([]);
-    setColumns([]);
-    return;
-  }
+        setTimeout(() => {
+          setIsUploading(false);
 
-  if (!hasRowsRef.current) {
-    setError(
-      "The CSV file does not contain any data rows."
-    );
-    return;
-  }
-},
+          if (!hasColumnsRef.current) {
+            setError("Invalid CSV file. No header columns were found.");
+            setRows([]);
+            setColumns([]);
+            return;
+          }
+
+          if (!hasRowsRef.current) {
+            setError("The CSV file does not contain any data rows.");
+            return;
+          }
+        }, 800);
+      },
       // Error
       error: (parseError) => {
         console.error("CSV Error:", parseError);
@@ -296,27 +284,22 @@ if (results.data && results.data.length > 0) {
 
   return (
     <div className="min-h-screen bg-white p-5">
-
       {/* =================================
           PAGE HEADING
       ================================= */}
-      <h1 className="text-4xl font-bold text-slate-900">
-        Upload Files
-      </h1>
+      <h1 className="text-4xl font-bold text-slate-900">Upload Files</h1>
 
-      <p className="mt-2 text-lg text-slate-600">
-        Upload your CSV files here.
-      </p>
+      <p className="mt-2 text-lg text-slate-600">Upload your CSV files here.</p>
 
       {/* =================================
           UPLOAD AREA
       ================================= */}
- <div
-  onDragOver={handleDragOver}
-  onDragEnter={handleDragOver}
-  onDragLeave={handleDragLeave}
-  onDrop={handleDrop}
-  className={`
+      <div
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`
     mt-8
     flex
     min-h-[240px]
@@ -334,13 +317,10 @@ if (results.data && results.data.length > 0) {
         : "border-slate-300 bg-white"
     }
   `}
->
-
-       <h2 className="text-2xl font-semibold text-slate-900">
-  {isDragging
-    ? "Drop CSV File Here"
-    : "Drag & Drop Files Here"}
-</h2>
+      >
+        <h2 className="text-2xl font-semibold text-slate-900">
+          {isDragging ? "Drop CSV File Here" : "Drag & Drop Files Here"}
+        </h2>
 
         <p className="mt-3 text-lg text-slate-500">
           or choose a file from your computer
@@ -382,14 +362,11 @@ if (results.data && results.data.length > 0) {
         ================================= */}
         {file && (
           <div className="mt-5 text-center">
-
             <p className="font-semibold text-green-600">
               File selected successfully
             </p>
 
-            <p className="mt-1 text-slate-700">
-              {file.name}
-            </p>
+            <p className="mt-1 text-slate-700">{file.name}</p>
 
             <p className="text-sm text-slate-500">
               {(file.size / 1024).toFixed(2)} KB
@@ -413,23 +390,15 @@ if (results.data && results.data.length > 0) {
                 disabled:bg-green-300
               "
             >
-              {isUploading
-                ? "Processing..."
-                : "Upload CSV"}
+              {isUploading ? "Processing..." : "Upload CSV"}
             </button>
-
           </div>
         )}
 
         {/* =================================
             ERROR
         ================================= */}
-        {error && (
-          <p className="mt-4 font-medium text-red-600">
-            {error}
-          </p>
-        )}
-
+        {error && <p className="mt-4 font-medium text-red-600">{error}</p>}
       </div>
 
       {/* =================================
@@ -437,17 +406,12 @@ if (results.data && results.data.length > 0) {
       ================================= */}
       {isUploading && (
         <div className="mx-auto mt-8 max-w-3xl">
-
           <div className="mb-2 flex justify-between">
-
             <span className="font-medium text-slate-700">
               Processing CSV...
             </span>
 
-            <span className="font-semibold text-blue-600">
-              {progress}%
-            </span>
-
+            <span className="font-semibold text-blue-600">{progress}%</span>
           </div>
 
           <div
@@ -458,7 +422,6 @@ if (results.data && results.data.length > 0) {
               bg-slate-200
             "
           >
-
             <div
               className="
                 h-full
@@ -471,9 +434,7 @@ if (results.data && results.data.length > 0) {
                 width: `${progress}%`,
               }}
             />
-
           </div>
-
         </div>
       )}
 
@@ -482,7 +443,6 @@ if (results.data && results.data.length > 0) {
       ================================= */}
       {rows.length > 0 && columns.length > 0 && (
         <div className="mt-10">
-
           {/* Preview heading */}
           <div
             className="
@@ -492,15 +452,11 @@ if (results.data && results.data.length > 0) {
               justify-between
             "
           >
-
-            <h2 className="text-2xl font-bold text-slate-900">
-              CSV Preview
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-900">CSV Preview</h2>
 
             <span className="text-slate-600">
               {rows.length} rows × {columns.length} columns
             </span>
-
           </div>
 
           {/* =================================
@@ -514,7 +470,6 @@ if (results.data && results.data.length > 0) {
               border-slate-300
             "
           >
-
             {/* =================================
                 TABLE HEADER
             ================================= */}
@@ -525,7 +480,6 @@ if (results.data && results.data.length > 0) {
                 bg-slate-100
               "
             >
-
               {columns.map((column) => (
                 <div
                   key={column}
@@ -543,38 +497,29 @@ if (results.data && results.data.length > 0) {
                   {column}
                 </div>
               ))}
-
             </div>
 
             {/* =================================
                 VIRTUALIZED ROWS
             ================================= */}
             <div className="min-w-max">
-
               <FixedSizeList
                 height={500}
                 itemCount={rows.length}
                 itemSize={50}
-                width={Math.max(
-                  columns.length * 220,
-                  800
-                )}
+                width={Math.max(columns.length * 220, 800)}
               >
                 {VirtualRow}
               </FixedSizeList>
-
             </div>
-
           </div>
 
           {/* Information */}
           <p className="mt-3 text-sm text-slate-500">
             Virtualized table: only visible rows are rendered.
           </p>
-
         </div>
       )}
-
     </div>
   );
 }
