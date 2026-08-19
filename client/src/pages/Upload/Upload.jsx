@@ -5,6 +5,7 @@ import { FixedSizeList } from "react-window";
 function Upload() {
   const hasColumnsRef = useRef(false);
   const hasRowsRef = useRef(false);
+  const hasParseErrorsRef = useRef(false);
   const fileInputRef = useRef(null);
 
   const [file, setFile] = useState(null);
@@ -14,7 +15,21 @@ function Upload() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+
   const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+  // ==============================
+  // RESET DATA
+  // ==============================
+  const resetPreview = () => {
+    setRows([]);
+    setColumns([]);
+    setProgress(0);
+
+    hasColumnsRef.current = false;
+    hasRowsRef.current = false;
+    hasParseErrorsRef.current = false;
+  };
 
   // ==============================
   // OPEN FILE PICKER
@@ -38,12 +53,12 @@ function Upload() {
       return "Invalid file type. Please select a CSV file.";
     }
 
-    // Check file size
+    // Check empty file
     if (selectedFile.size === 0) {
       return "The selected CSV file is empty.";
     }
 
-    // Maximum file size
+    // Check maximum file size
     if (selectedFile.size > MAX_FILE_SIZE) {
       return "File is too large. Maximum allowed size is 10 MB.";
     }
@@ -52,9 +67,35 @@ function Upload() {
   };
 
   // ==============================
-  // SELECT CSV FILE
+  // SET SELECTED FILE
   // ==============================
+  const processSelectedFile = (selectedFile) => {
+    if (!selectedFile) {
+      return;
+    }
 
+    setError("");
+    resetPreview();
+
+    const validationError = validateCSVFile(selectedFile);
+
+    if (validationError) {
+      setFile(null);
+      setError(validationError);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      return;
+    }
+
+    setFile(selectedFile);
+  };
+
+  // ==============================
+  // FILE PICKER
+  // ==============================
   const handleFileChange = (event) => {
     const selectedFile = event.target.files?.[0];
 
@@ -62,26 +103,12 @@ function Upload() {
       return;
     }
 
-    setError("");
-    setRows([]);
-    setColumns([]);
-    setProgress(0);
-
-    const validationError = validateCSVFile(selectedFile);
-
-    if (validationError) {
-      setError(validationError);
-      setFile(null);
-      event.target.value = "";
-      return;
-    }
-
-    setFile(selectedFile);
+    processSelectedFile(selectedFile);
   };
-  // ==============================
-  // DRAG & DROP
-  // ==============================
 
+  // ==============================
+  // DRAG OVER
+  // ==============================
   const handleDragOver = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -91,6 +118,9 @@ function Upload() {
     }
   };
 
+  // ==============================
+  // DRAG LEAVE
+  // ==============================
   const handleDragLeave = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -98,6 +128,9 @@ function Upload() {
     setIsDragging(false);
   };
 
+  // ==============================
+  // DROP FILE
+  // ==============================
   const handleDrop = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -111,36 +144,25 @@ function Upload() {
     const droppedFile = event.dataTransfer.files?.[0];
 
     if (!droppedFile) {
+      setError("No file was dropped.");
       return;
     }
 
-    setError("");
-    setRows([]);
-    setColumns([]);
-    setProgress(0);
-
-    const validationError = validateCSVFile(droppedFile);
-
-    if (validationError) {
-      setError(validationError);
-      setFile(null);
-      return;
-    }
-
-    setFile(droppedFile);
+    processSelectedFile(droppedFile);
   };
 
   // ==============================
   // UPLOAD + PARSE CSV
   // ==============================
   const handleUpload = () => {
-    hasColumnsRef.current = false;
-    hasRowsRef.current = false;
-
     if (!file) {
       setError("Please select a CSV file first.");
       return;
     }
+
+    hasColumnsRef.current = false;
+    hasRowsRef.current = false;
+    hasParseErrorsRef.current = false;
 
     setIsUploading(true);
     setProgress(0);
@@ -152,33 +174,49 @@ function Upload() {
       header: true,
       skipEmptyLines: true,
 
-      // Process large CSV in chunks
+      // Process large CSV files in chunks
       chunkSize: 256 * 1024,
+
       worker: true,
 
-      // Each chunk
+      // ==============================
+      // PROCESS EACH CHUNK
+      // ==============================
       chunk: (results) => {
-        // Check parsing errors
+        // Detect parsing errors
         if (results.errors && results.errors.length > 0) {
           console.warn("CSV parsing errors:", results.errors);
+
+          hasParseErrorsRef.current = true;
         }
 
-        if (results.meta.fields && results.meta.fields.length > 0) {
+        // Detect columns
+        if (
+          results.meta?.fields &&
+          results.meta.fields.length > 0
+        ) {
           hasColumnsRef.current = true;
+
+          setColumns((previousColumns) => {
+            if (previousColumns.length === 0) {
+              return results.meta.fields;
+            }
+
+            return previousColumns;
+          });
         }
 
-        if (results.data && results.data.length > 0) {
+        // Detect rows
+        if (
+          results.data &&
+          results.data.length > 0
+        ) {
           hasRowsRef.current = true;
-        }
 
-        // Get columns
-        if (results.errors && results.errors.length > 0) {
-          console.warn("CSV parsing errors:", results.errors);
-        }
-
-        // Detect columns from parsed row
-        if (results.data && results.data.length > 0) {
-          const detectedColumns = Object.keys(results.data[0]);
+          // Detect columns from row if needed
+          const detectedColumns = Object.keys(
+            results.data[0] || {}
+          );
 
           if (detectedColumns.length > 0) {
             hasColumnsRef.current = true;
@@ -192,49 +230,82 @@ function Upload() {
             });
           }
 
-          // CSV contains data
-          hasRowsRef.current = true;
-
-          setRows((previousRows) => [...previousRows, ...results.data]);
+          setRows((previousRows) => [
+            ...previousRows,
+            ...results.data,
+          ]);
         }
 
-        // Calculate progress
+        // ==============================
+        // PROGRESS
+        // ==============================
         if (file.size > 0) {
           const progressValue = Math.min(
-            Math.round((results.meta.cursor / file.size) * 100),
-            100,
+            Math.round(
+              (results.meta.cursor / file.size) * 100
+            ),
+            100
           );
 
           setProgress(progressValue);
         }
       },
 
-      // Completed
+      // ==============================
+      // COMPLETE
+      // ==============================
       complete: () => {
         setProgress(100);
 
         setTimeout(() => {
           setIsUploading(false);
 
-          if (!hasColumnsRef.current) {
-            setError("Invalid CSV file. No header columns were found.");
-            setRows([]);
-            setColumns([]);
+          // CSV parsing error
+          if (hasParseErrorsRef.current) {
+            setError(
+              "The CSV contains formatting errors. Please check the file and try again."
+            );
             return;
           }
 
-          if (!hasRowsRef.current) {
-            setError("The CSV file does not contain any data rows.");
+          // No header
+          if (!hasColumnsRef.current) {
+            setError(
+              "Invalid CSV file. No header columns were found."
+            );
+
+            setRows([]);
+            setColumns([]);
+
             return;
           }
-        }, 800);
+
+          // No rows
+          if (!hasRowsRef.current) {
+            setError(
+              "The CSV file does not contain any data rows."
+            );
+
+            return;
+          }
+
+          // Success
+          setError("");
+        }, 500);
       },
-      // Error
+
+      // ==============================
+      // PARSE ERROR
+      // ==============================
       error: (parseError) => {
         console.error("CSV Error:", parseError);
 
-        setError("Failed to read CSV file.");
+        setError(
+          "Failed to read the CSV file. Please check the file and try again."
+        );
+
         setIsUploading(false);
+        setProgress(0);
       },
     });
   };
@@ -264,13 +335,18 @@ function Upload() {
           <div
             key={column}
             className="
-              w-[220px]
+              w-[180px]
+              sm:w-[200px]
+              md:w-[220px]
               shrink-0
               overflow-hidden
               text-ellipsis
               whitespace-nowrap
-              px-4
+              px-3
+              sm:px-4
               py-3
+              text-sm
+              sm:text-base
               text-slate-700
             "
             title={String(row[column] ?? "")}
@@ -283,50 +359,93 @@ function Upload() {
   };
 
   return (
-    <div className="min-h-screen bg-white p-5">
-      {/* =================================
+    <div className="min-h-screen bg-white p-3 sm:p-5 md:p-8">
+
+      {/* ==============================
           PAGE HEADING
-      ================================= */}
-      <h1 className="text-4xl font-bold text-slate-900">Upload Files</h1>
+      ============================== */}
+      <h1
+        className="
+          text-3xl
+          sm:text-4xl
+          font-bold
+          text-slate-900
+        "
+      >
+        Upload Files
+      </h1>
 
-      <p className="mt-2 text-lg text-slate-600">Upload your CSV files here.</p>
+      <p
+        className="
+          mt-2
+          text-base
+          sm:text-lg
+          text-slate-600
+        "
+      >
+        Upload your CSV files here.
+      </p>
 
-      {/* =================================
+      {/* ==============================
           UPLOAD AREA
-      ================================= */}
+      ============================== */}
       <div
         onDragOver={handleDragOver}
         onDragEnter={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`
-    mt-8
-    flex
-    min-h-[240px]
-    flex-col
-    items-center
-    justify-center
-    rounded-xl
-    border-2
-    border-dashed
-    transition-all
-    duration-200
-    ${
-      isDragging
-        ? "border-blue-500 bg-blue-50 scale-[1.01]"
-        : "border-slate-300 bg-white"
-    }
-  `}
+          mt-6
+          sm:mt-8
+          flex
+          min-h-[260px]
+          sm:min-h-[300px]
+          flex-col
+          items-center
+          justify-center
+          rounded-xl
+          border-2
+          border-dashed
+          px-4
+          py-8
+          text-center
+          transition-all
+          duration-200
+
+          ${
+            isDragging
+              ? "border-blue-500 bg-blue-50 scale-[1.01]"
+              : "border-slate-300 bg-white"
+          }
+        `}
       >
-        <h2 className="text-2xl font-semibold text-slate-900">
-          {isDragging ? "Drop CSV File Here" : "Drag & Drop Files Here"}
+
+        {/* Upload heading */}
+        <h2
+          className="
+            text-xl
+            sm:text-2xl
+            font-semibold
+            text-slate-900
+          "
+        >
+          {isDragging
+            ? "Drop CSV File Here"
+            : "Drag & Drop Files Here"}
         </h2>
 
-        <p className="mt-3 text-lg text-slate-500">
+        <p
+          className="
+            mt-3
+            text-sm
+            sm:text-lg
+            text-slate-500
+          "
+        >
           or choose a file from your computer
         </p>
 
-        {/* Hidden file input */}
+        {/* Hidden input */}
         <input
           ref={fileInputRef}
           type="file"
@@ -335,20 +454,26 @@ function Upload() {
           className="hidden"
         />
 
-        {/* Choose File */}
+        {/* Choose button */}
         <button
           type="button"
           onClick={handleChooseFile}
           disabled={isUploading}
           className="
             mt-6
+            w-full
+            max-w-[220px]
             rounded-lg
             bg-blue-600
-            px-7
-            py-4
-            text-lg
+            px-6
+            py-3
+            sm:px-7
+            sm:py-4
+            text-base
+            sm:text-lg
             font-semibold
             text-white
+            transition
             hover:bg-blue-700
             disabled:cursor-not-allowed
             disabled:bg-blue-300
@@ -357,66 +482,151 @@ function Upload() {
           Choose File
         </button>
 
-        {/* =================================
+        {/* ==============================
             SELECTED FILE
-        ================================= */}
+        ============================== */}
         {file && (
-          <div className="mt-5 text-center">
-            <p className="font-semibold text-green-600">
+          <div
+            className="
+              mt-5
+              w-full
+              max-w-md
+              text-center
+            "
+          >
+            <p
+              className="
+                font-semibold
+                text-green-600
+              "
+            >
               File selected successfully
             </p>
 
-            <p className="mt-1 text-slate-700">{file.name}</p>
+            <p
+              className="
+                mt-1
+                break-all
+                text-sm
+                sm:text-base
+                text-slate-700
+              "
+            >
+              {file.name}
+            </p>
 
             <p className="text-sm text-slate-500">
               {(file.size / 1024).toFixed(2)} KB
             </p>
 
-            {/* Upload CSV */}
+            {/* Upload button */}
             <button
               type="button"
               onClick={handleUpload}
               disabled={isUploading}
               className="
                 mt-4
+                w-full
+                max-w-[220px]
                 rounded-lg
                 bg-green-600
-                px-7
+                px-6
                 py-3
                 font-semibold
                 text-white
+                transition
                 hover:bg-green-700
                 disabled:cursor-not-allowed
                 disabled:bg-green-300
               "
             >
-              {isUploading ? "Processing..." : "Upload CSV"}
+              {isUploading
+                ? "Processing..."
+                : "Upload CSV"}
             </button>
           </div>
         )}
 
-        {/* =================================
-            ERROR
-        ================================= */}
-        {error && <p className="mt-4 font-medium text-red-600">{error}</p>}
+        {/* ==============================
+            ERROR MESSAGE
+        ============================== */}
+        {error && (
+          <div
+            className="
+              mt-5
+              w-full
+              max-w-2xl
+              rounded-lg
+              border
+              border-red-200
+              bg-red-50
+              px-4
+              py-3
+              text-center
+            "
+          >
+            <p
+              className="
+                text-sm
+                sm:text-base
+                font-medium
+                text-red-600
+              "
+            >
+              {error}
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* =================================
+      {/* ==============================
           PROGRESS BAR
-      ================================= */}
+      ============================== */}
       {isUploading && (
-        <div className="mx-auto mt-8 max-w-3xl">
-          <div className="mb-2 flex justify-between">
-            <span className="font-medium text-slate-700">
+        <div
+          className="
+            mx-auto
+            mt-6
+            w-full
+            max-w-3xl
+          "
+        >
+          <div
+            className="
+              mb-2
+              flex
+              items-center
+              justify-between
+              gap-3
+            "
+          >
+            <span
+              className="
+                text-sm
+                sm:text-base
+                font-medium
+                text-slate-700
+              "
+            >
               Processing CSV...
             </span>
 
-            <span className="font-semibold text-blue-600">{progress}%</span>
+            <span
+              className="
+                text-sm
+                sm:text-base
+                font-semibold
+                text-blue-600
+              "
+            >
+              {progress}%
+            </span>
           </div>
 
           <div
             className="
-              h-4
+              h-3
+              sm:h-4
               overflow-hidden
               rounded-full
               bg-slate-200
@@ -438,30 +648,47 @@ function Upload() {
         </div>
       )}
 
-      {/* =================================
+      {/* ==============================
           CSV PREVIEW
-      ================================= */}
+      ============================== */}
       {rows.length > 0 && columns.length > 0 && (
-        <div className="mt-10">
+        <div className="mt-8 sm:mt-10">
+
           {/* Preview heading */}
           <div
             className="
               mb-4
               flex
-              items-center
-              justify-between
+              flex-col
+              gap-2
+              sm:flex-row
+              sm:items-center
+              sm:justify-between
             "
           >
-            <h2 className="text-2xl font-bold text-slate-900">CSV Preview</h2>
+            <h2
+              className="
+                text-xl
+                sm:text-2xl
+                font-bold
+                text-slate-900
+              "
+            >
+              CSV Preview
+            </h2>
 
-            <span className="text-slate-600">
+            <span
+              className="
+                text-sm
+                sm:text-base
+                text-slate-600
+              "
+            >
               {rows.length} rows × {columns.length} columns
             </span>
           </div>
 
-          {/* =================================
-              TABLE CONTAINER
-          ================================= */}
+          {/* Table */}
           <div
             className="
               overflow-x-auto
@@ -470,9 +697,7 @@ function Upload() {
               border-slate-300
             "
           >
-            {/* =================================
-                TABLE HEADER
-            ================================= */}
+            {/* Header */}
             <div
               className="
                 flex
@@ -484,12 +709,17 @@ function Upload() {
                 <div
                   key={column}
                   className="
-                    w-[220px]
+                    w-[180px]
+                    sm:w-[200px]
+                    md:w-[220px]
                     shrink-0
                     border-b
                     border-slate-300
-                    px-4
+                    px-3
+                    sm:px-4
                     py-3
+                    text-sm
+                    sm:text-base
                     font-semibold
                     text-slate-800
                   "
@@ -499,15 +729,21 @@ function Upload() {
               ))}
             </div>
 
-            {/* =================================
-                VIRTUALIZED ROWS
-            ================================= */}
+            {/* Virtualized rows */}
             <div className="min-w-max">
               <FixedSizeList
                 height={500}
                 itemCount={rows.length}
                 itemSize={50}
-                width={Math.max(columns.length * 220, 800)}
+                width={Math.max(
+                  columns.length *
+                    (window.innerWidth < 640
+                      ? 180
+                      : window.innerWidth < 768
+                      ? 200
+                      : 220),
+                  800
+                )}
               >
                 {VirtualRow}
               </FixedSizeList>
@@ -515,7 +751,14 @@ function Upload() {
           </div>
 
           {/* Information */}
-          <p className="mt-3 text-sm text-slate-500">
+          <p
+            className="
+              mt-3
+              text-xs
+              sm:text-sm
+              text-slate-500
+            "
+          >
             Virtualized table: only visible rows are rendered.
           </p>
         </div>
