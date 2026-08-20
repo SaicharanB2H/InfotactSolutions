@@ -16,7 +16,72 @@ function Upload() {
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
 
+  const [transformRules, setTransformRules] = useState({
+  trim: false,
+  uppercase: false,
+  lowercase: false,
+  removeEmpty: false,
+  removeDuplicates: false,
+});
   const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+  //Transformation function
+  
+const applyTransformations = () => {
+  let transformed = [...rows];
+
+  // Remove empty rows
+  if (transformRules.removeEmpty) {
+    transformed = transformed.filter((row) =>
+      Object.values(row).some(
+        (value) => String(value ?? "").trim() !== ""
+      )
+    );
+  }
+
+  // Transform values
+  transformed = transformed.map((row) => {
+    const newRow = {};
+
+    Object.entries(row).forEach(([key, value]) => {
+      let newValue = String(value ?? "");
+
+      if (transformRules.trim) {
+        newValue = newValue.trim();
+      }
+
+      if (transformRules.uppercase) {
+        newValue = newValue.toUpperCase();
+      }
+
+      if (transformRules.lowercase) {
+        newValue = newValue.toLowerCase();
+      }
+
+      newRow[key] = newValue;
+    });
+
+    return newRow;
+  });
+
+  // Remove duplicates
+  if (transformRules.removeDuplicates) {
+    const seen = new Set();
+
+    transformed = transformed.filter((row) => {
+      const key = JSON.stringify(row);
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+  }
+
+  setRows(transformed);
+};
 
   // ==============================
   // RESET DATA
@@ -25,6 +90,14 @@ function Upload() {
     setRows([]);
     setColumns([]);
     setProgress(0);
+
+    setTransformRules({
+  trim: false,
+  uppercase: false,
+  lowercase: false,
+  removeEmpty: false,
+  removeDuplicates: false,
+});
 
     hasColumnsRef.current = false;
     hasRowsRef.current = false;
@@ -319,6 +392,9 @@ function Upload() {
     if (!row) {
       return null;
     }
+
+
+
 
     return (
       <div
@@ -647,6 +723,117 @@ function Upload() {
           </div>
         </div>
       )}
+
+
+
+
+
+
+<div className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+  <h2 className="mb-4 text-xl font-semibold text-gray-900">
+    CSV Transformation Rules
+  </h2>
+
+  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
+    <label className="flex cursor-pointer items-center gap-3">
+      <input
+        type="checkbox"
+        checked={transformRules.trim}
+        onChange={(e) =>
+          setTransformRules({
+            ...transformRules,
+            trim: e.target.checked,
+          })
+        }
+        className="h-4 w-4"
+      />
+      <span className="text-gray-700">
+        Trim whitespace
+      </span>
+    </label>
+
+    <label className="flex cursor-pointer items-center gap-3">
+      <input
+        type="checkbox"
+        checked={transformRules.uppercase}
+        onChange={(e) =>
+          setTransformRules({
+            ...transformRules,
+            uppercase: e.target.checked,
+            lowercase: false,
+          })
+        }
+        className="h-4 w-4"
+      />
+      <span className="text-gray-700">
+        Convert text to UPPERCASE
+      </span>
+    </label>
+
+    <label className="flex cursor-pointer items-center gap-3">
+      <input
+        type="checkbox"
+        checked={transformRules.lowercase}
+        onChange={(e) =>
+          setTransformRules({
+            ...transformRules,
+            lowercase: e.target.checked,
+            uppercase: false,
+          })
+        }
+        className="h-4 w-4"
+      />
+      <span className="text-gray-700">
+        Convert text to lowercase
+      </span>
+    </label>
+
+    <label className="flex cursor-pointer items-center gap-3">
+      <input
+        type="checkbox"
+        checked={transformRules.removeEmpty}
+        onChange={(e) =>
+          setTransformRules({
+            ...transformRules,
+            removeEmpty: e.target.checked,
+          })
+        }
+        className="h-4 w-4"
+      />
+      <span className="text-gray-700">
+        Remove empty rows
+      </span>
+    </label>
+
+    <label className="flex cursor-pointer items-center gap-3">
+      <input
+        type="checkbox"
+        checked={transformRules.removeDuplicates}
+        onChange={(e) =>
+          setTransformRules({
+            ...transformRules,
+            removeDuplicates: e.target.checked,
+          })
+        }
+        className="h-4 w-4"
+      />
+      <span className="text-gray-700">
+        Remove duplicate rows
+      </span>
+    </label>
+
+  </div>
+
+  <button
+    type="button"
+    onClick={applyTransformations}
+    disabled={!rows.length}
+    className="mt-5 rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+  >
+    Apply Transformations
+  </button>
+</div>
 
       {/* ==============================
           CSV PREVIEW
