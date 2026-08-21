@@ -16,6 +16,8 @@ function Upload() {
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
 
+
+ 
   const [transformRules, setTransformRules] = useState({
   trim: false,
   uppercase: false,
@@ -23,6 +25,10 @@ function Upload() {
   removeEmpty: false,
   removeDuplicates: false,
 });
+
+ const selectedRuleCount = Object.values(transformRules).filter(
+  Boolean
+).length;
   const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
   //Transformation function
@@ -727,16 +733,26 @@ const applyTransformations = () => {
 
 
 
+ {/* ==============================
+          CSV Transformation Rules
+      ============================== */}
+<div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  {/* Header */}
+  <div className="mb-6">
+    <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+      CSV Transformation Rules
+    </h2>
 
+    <p className="mt-1 text-sm text-slate-500 sm:text-base">
+      Clean and transform your CSV data before processing.
+    </p>
+  </div>
 
-<div className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-  <h2 className="mb-4 text-xl font-semibold text-gray-900">
-    CSV Transformation Rules
-  </h2>
-
-  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-    <label className="flex cursor-pointer items-center gap-3">
+  {/* Rules */}
+  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    
+    {/* Trim */}
+    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
       <input
         type="checkbox"
         checked={transformRules.trim}
@@ -746,14 +762,21 @@ const applyTransformations = () => {
             trim: e.target.checked,
           })
         }
-        className="h-4 w-4"
+        className="h-5 w-5 rounded"
       />
-      <span className="text-gray-700">
-        Trim whitespace
-      </span>
+
+      <div>
+        <p className="font-medium text-slate-900">
+          Trim whitespace
+        </p>
+        <p className="text-sm text-slate-500">
+          Remove spaces before and after values
+        </p>
+      </div>
     </label>
 
-    <label className="flex cursor-pointer items-center gap-3">
+    {/* Uppercase */}
+    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
       <input
         type="checkbox"
         checked={transformRules.uppercase}
@@ -764,14 +787,21 @@ const applyTransformations = () => {
             lowercase: false,
           })
         }
-        className="h-4 w-4"
+        className="h-5 w-5 rounded"
       />
-      <span className="text-gray-700">
-        Convert text to UPPERCASE
-      </span>
+
+      <div>
+        <p className="font-medium text-slate-900">
+          Convert to UPPERCASE
+        </p>
+        <p className="text-sm text-slate-500">
+          Convert text values to capital letters
+        </p>
+      </div>
     </label>
 
-    <label className="flex cursor-pointer items-center gap-3">
+    {/* Lowercase */}
+    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
       <input
         type="checkbox"
         checked={transformRules.lowercase}
@@ -782,14 +812,21 @@ const applyTransformations = () => {
             uppercase: false,
           })
         }
-        className="h-4 w-4"
+        className="h-5 w-5 rounded"
       />
-      <span className="text-gray-700">
-        Convert text to lowercase
-      </span>
+
+      <div>
+        <p className="font-medium text-slate-900">
+          Convert to lowercase
+        </p>
+        <p className="text-sm text-slate-500">
+          Convert text values to small letters
+        </p>
+      </div>
     </label>
 
-    <label className="flex cursor-pointer items-center gap-3">
+    {/* Empty rows */}
+    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
       <input
         type="checkbox"
         checked={transformRules.removeEmpty}
@@ -799,14 +836,21 @@ const applyTransformations = () => {
             removeEmpty: e.target.checked,
           })
         }
-        className="h-4 w-4"
+        className="h-5 w-5 rounded"
       />
-      <span className="text-gray-700">
-        Remove empty rows
-      </span>
+
+      <div>
+        <p className="font-medium text-slate-900">
+          Remove empty rows
+        </p>
+        <p className="text-sm text-slate-500">
+          Remove rows that contain no data
+        </p>
+      </div>
     </label>
 
-    <label className="flex cursor-pointer items-center gap-3">
+    {/* Duplicates */}
+    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50 sm:col-span-2">
       <input
         type="checkbox"
         checked={transformRules.removeDuplicates}
@@ -816,25 +860,56 @@ const applyTransformations = () => {
             removeDuplicates: e.target.checked,
           })
         }
-        className="h-4 w-4"
+        className="h-5 w-5 rounded"
       />
-      <span className="text-gray-700">
-        Remove duplicate rows
-      </span>
-    </label>
 
+      <div>
+        <p className="font-medium text-slate-900">
+          Remove duplicate rows
+        </p>
+        <p className="text-sm text-slate-500">
+          Keep only unique CSV records
+        </p>
+      </div>
+    </label>
   </div>
 
-  <button
-    type="button"
-    onClick={applyTransformations}
-    disabled={!rows.length}
-    className="mt-5 rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-  >
-    Apply Transformations
-  </button>
-</div>
+  {/* Status */}
+  <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3">
+    <p className="text-sm font-medium text-slate-700">
+      {selectedRuleCount} rule
+      {selectedRuleCount !== 1 ? "s" : ""} selected
+    </p>
+  </div>
 
+  {/* Buttons */}
+  <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+    <button
+      type="button"
+      onClick={applyTransformations}
+      disabled={!rows.length || selectedRuleCount === 0}
+      className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+    >
+      Apply Transformations
+    </button>
+
+    <button
+      type="button"
+      onClick={() =>
+        setTransformRules({
+          trim: false,
+          uppercase: false,
+          lowercase: false,
+          removeEmpty: false,
+          removeDuplicates: false,
+        })
+      }
+      className="rounded-lg border border-slate-300 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+    >
+      Reset Rules
+    </button>
+  </div>
+</div>
       {/* ==============================
           CSV PREVIEW
       ============================== */}
