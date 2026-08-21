@@ -1,70 +1,147 @@
 import { List } from "react-window";
 
-function CSVPreviewTable({ headers, rows }) {
-  const rowHeight = 48;
-  const tableHeight = 500;
+function CSVPreviewTable({ headers = [], rows = [] }) {
+  const rowHeight = 52;
+  const columnWidth = 180;
+
+  const totalWidth = Math.max(
+    headers.length * columnWidth,
+    100
+  );
+
+  const gridColumns = headers
+    .map(() => `${columnWidth}px`)
+    .join(" ");
 
   const Row = ({ index, style }) => {
-    const row = rows[index];
+    const row = rows[index] || {};
 
     return (
       <div
-        style={style}
-        className="flex border-b border-gray-200 bg-white hover:bg-gray-50"
+        style={{
+          ...style,
+          display: "grid",
+          gridTemplateColumns: gridColumns,
+          width: totalWidth,
+        }}
+        className="border-b border-slate-200 bg-white hover:bg-slate-50"
       >
         {headers.map((header, columnIndex) => (
           <div
             key={columnIndex}
-            className="min-w-[180px] flex-1 truncate px-6 py-3 text-sm text-gray-700"
-            title={row[header]}
+            className="flex items-center overflow-hidden border-r border-slate-200 px-5 text-sm text-slate-700"
+            title={String(row[header] ?? "")}
           >
-            {row[header]}
+            <span className="truncate">
+              {row[header] ?? ""}
+            </span>
           </div>
         ))}
       </div>
     );
   };
 
+  if (headers.length === 0) {
+    return (
+      <section className="mt-8 rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <p className="text-slate-500">
+          No CSV columns found.
+        </p>
+      </section>
+    );
+  }
+
   return (
-    <div className="mt-8">
+    <section className="mt-8">
+
+      {/* PREVIEW TITLE */}
+
       <div className="mb-4">
-        <h2 className="text-2xl font-bold text-gray-800">
+        <h2 className="text-2xl font-bold text-slate-800">
           CSV Preview
         </h2>
 
-        <p className="text-sm text-gray-500">
+        <p className="mt-1 text-sm text-slate-500">
           {rows.length} rows × {headers.length} columns
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow">
-        {/* Table Header */}
-        <div className="flex min-w-max bg-gray-800 text-left text-white">
-          {headers.map((header, index) => (
+      {/* TABLE CONTAINER */}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+
+        {/* MOBILE / HORIZONTAL SCROLL */}
+
+        <div className="w-full overflow-x-auto">
+
+          <div
+            style={{
+              minWidth: totalWidth,
+            }}
+          >
+
+            {/* TABLE HEADER */}
+
             <div
-              key={index}
-              className="min-w-[180px] flex-1 px-6 py-4 text-sm font-semibold"
+              style={{
+                display: "grid",
+                gridTemplateColumns: gridColumns,
+                width: totalWidth,
+              }}
+              className="bg-slate-800 text-white"
             >
-              {header}
+
+              {headers.map((header, index) => (
+                <div
+                  key={index}
+                  className="border-r border-slate-700 px-5 py-4 text-sm font-semibold"
+                >
+                  {header}
+                </div>
+              ))}
+
             </div>
-          ))}
+
+            {/* TABLE BODY */}
+
+            {rows.length > 0 ? (
+
+              <List
+                rowComponent={Row}
+                rowCount={rows.length}
+                rowHeight={rowHeight}
+                rowProps={{}}
+                style={{
+                  height: Math.min(
+                    rows.length * rowHeight,
+                    400
+                  ),
+                  width: "100%",
+                  minWidth: totalWidth,
+                }}
+              />
+
+            ) : (
+
+              <div className="p-8 text-center text-slate-500">
+                No data rows found in this CSV file.
+              </div>
+
+            )}
+
+          </div>
+
         </div>
 
-        {/* Virtualized Rows */}
-        <div className="min-w-max">
-          <List
-            rowCount={rows.length}
-            rowHeight={rowHeight}
-            rowComponent={Row}
-            rowProps={{}}
-            style={{
-              height: tableHeight,
-              width: "100%",
-            }}
-          />
-        </div>
       </div>
-    </div>
+
+      {/* TABLE HELP */}
+
+      <p className="mt-3 text-xs text-slate-400">
+        Scroll horizontally to view additional columns.
+      </p>
+
+    </section>
   );
 }
 
