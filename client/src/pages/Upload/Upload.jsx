@@ -15,6 +15,9 @@ function Upload() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [processing, setProcessing] = useState(false);
+const [processingProgress, setProcessingProgress] = useState(0);
+const [processingStatus, setProcessingStatus] = useState("");
 
 
  
@@ -32,63 +35,109 @@ function Upload() {
   const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
   //Transformation function
-  
-const applyTransformations = () => {
-  let transformed = [...rows];
+ const applyTransformations = () => {
+  if (!rows.length || selectedRuleCount === 0) {
+    return;
+  }
 
-  // Remove empty rows
+  setProcessing(true);
+  setProcessingProgress(0);
+  setProcessingStatus("Starting transformation...");
+
+  let transformedRows = [...rows];
+
+  // Step 1 - Trim whitespace
+  if (transformRules.trim) {
+    setProcessingStatus("Trimming whitespace...");
+    setProcessingProgress(20);
+
+    transformedRows = transformedRows.map((row) => {
+      const newRow = {};
+
+      columns.forEach((column) => {
+        newRow[column] =
+          typeof row[column] === "string"
+            ? row[column].trim()
+            : row[column];
+      });
+
+      return newRow;
+    });
+  }
+
+  // Step 2 - Uppercase / lowercase
+  if (transformRules.uppercase || transformRules.lowercase) {
+    setProcessingStatus("Applying text transformations...");
+    setProcessingProgress(40);
+
+    transformedRows = transformedRows.map((row) => {
+      const newRow = {};
+
+      columns.forEach((column) => {
+        let value = row[column];
+
+        if (typeof value === "string") {
+          if (transformRules.uppercase) {
+            value = value.toUpperCase();
+          }
+
+          if (transformRules.lowercase) {
+            value = value.toLowerCase();
+          }
+        }
+
+        newRow[column] = value;
+      });
+
+      return newRow;
+    });
+  }
+
+  // Step 3 - Remove empty rows
   if (transformRules.removeEmpty) {
-    transformed = transformed.filter((row) =>
-      Object.values(row).some(
-        (value) => String(value ?? "").trim() !== ""
+    setProcessingStatus("Removing empty rows...");
+    setProcessingProgress(60);
+
+    transformedRows = transformedRows.filter((row) =>
+      columns.some(
+        (column) =>
+          row[column] !== null &&
+          row[column] !== undefined &&
+          String(row[column]).trim() !== ""
       )
     );
   }
 
-  // Transform values
-  transformed = transformed.map((row) => {
-    const newRow = {};
-
-    Object.entries(row).forEach(([key, value]) => {
-      let newValue = String(value ?? "");
-
-      if (transformRules.trim) {
-        newValue = newValue.trim();
-      }
-
-      if (transformRules.uppercase) {
-        newValue = newValue.toUpperCase();
-      }
-
-      if (transformRules.lowercase) {
-        newValue = newValue.toLowerCase();
-      }
-
-      newRow[key] = newValue;
-    });
-
-    return newRow;
-  });
-
-  // Remove duplicates
+  // Step 4 - Remove duplicates
   if (transformRules.removeDuplicates) {
+    setProcessingStatus("Removing duplicate rows...");
+    setProcessingProgress(80);
+
+    const uniqueRows = [];
     const seen = new Set();
 
-    transformed = transformed.filter((row) => {
+    transformedRows.forEach((row) => {
       const key = JSON.stringify(row);
 
-      if (seen.has(key)) {
-        return false;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueRows.push(row);
       }
-
-      seen.add(key);
-      return true;
     });
+
+    transformedRows = uniqueRows;
   }
 
-  setRows(transformed);
-};
+  // Finish
+  setProcessingStatus("Transformation completed!");
+  setProcessingProgress(100);
 
+  setRows(transformedRows);
+
+  setTimeout(() => {
+    setProcessing(false);
+  }, 800);
+};
   // ==============================
   // RESET DATA
   // ==============================
@@ -733,6 +782,36 @@ const applyTransformations = () => {
 
 
 
+
+
+{processing && (
+  <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5">
+
+    <div className="mb-3 flex items-center justify-between">
+      <span className="font-semibold text-slate-800">
+        Processing CSV...
+      </span>
+
+      <span className="font-bold text-blue-600">
+        {processingProgress}%
+      </span>
+    </div>
+
+    <div className="h-4 overflow-hidden rounded-full bg-blue-100">
+      <div
+        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+        style={{
+          width: `${processingProgress}%`,
+        }}
+      />
+    </div>
+
+    <p className="mt-3 text-sm font-medium text-slate-600">
+      {processingStatus}
+    </p>
+  </div>
+)}
+
  {/* ==============================
           CSV Transformation Rules
       ============================== */}
@@ -890,7 +969,7 @@ const applyTransformations = () => {
       disabled={!rows.length || selectedRuleCount === 0}
       className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
     >
-      Apply Transformations
+    {processing ? "Processing..." : "Apply Transformations"}
     </button>
 
     <button
