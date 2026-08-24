@@ -3,6 +3,14 @@ import Papa from "papaparse";
 import { FixedSizeList } from "react-window";
 
 function Upload() {
+const wsRef = useRef(null);
+
+const [jobId, setJobId] = useState(null);
+const [wsProgress, setWsProgress] = useState(0);
+const [wsStatus, setWsStatus] = useState("");
+const [processedRows, setProcessedRows] = useState(0);
+const [failedRows, setFailedRows] = useState(0);
+
   const hasColumnsRef = useRef(false);
   const hasRowsRef = useRef(false);
   const hasParseErrorsRef = useRef(false);
@@ -34,6 +42,94 @@ const [processingStatus, setProcessingStatus] = useState("");
 ).length;
   const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+
+const uploadToBackend = async () => {
+  if (!file) {
+    setError("Please select a CSV file first.");
+    return;
+  }
+
+  try {
+    setError("");
+    setWsStatus("Uploading file...");
+    setWsProgress(0);
+
+    const formData = new FormData();
+
+    formData.append("file", file);
+
+    // You need the actual pipeline ID here
+    formData.append("pipelineId", "YOUR_PIPELINE_ID");
+
+    const response = await fetch("http://localhost:5000/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error?.message || "Upload failed"
+      );
+    }
+
+    console.log("Upload response:", data);
+
+    setJobId(data.jobId);
+
+    // Connect to WebSocket after receiving jobId
+    connectWebSocket(data.jobId);
+
+    setWsStatus("Processing started...");
+  } catch (error) {
+    console.error("Upload error:", error);
+    setError(error.message || "Failed to upload file.");
+  }
+};
+
+  const connectWebSocket = (jobId) => {
+  const ws = new WebSocket(
+    `ws://localhost:5000/ws/jobs/${jobId}`
+  );
+
+  wsRef.current = ws;
+
+  ws.onopen = () => {
+    console.log("WebSocket connected");
+     setWsStatus("Connected to processing job");
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      console.log("WebSocket message:", data);
+
+      if (data.event === "progress") {
+        setWsProgress(data.percentage ?? 0);
+        setWsStatus(data.status ?? "processing");
+        setProcessedRows(data.processedRows ?? 0);
+        setFailedRows(data.failedRows ?? 0);
+      }
+
+      if (data.event === "connected") {
+        console.log("Connected to job:", data.jobId);
+      }
+    } catch (error) {
+      console.error("WebSocket message error:", error);
+    }
+  };
+
+  ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
+        setWsStatus("WebSocket connection error");
+  };
+
+  ws.onclose = () => {
+    console.log("WebSocket disconnected");
+  };
+};
   //Transformation function
  const applyTransformations = () => {
   if (!rows.length || selectedRuleCount === 0) {
@@ -678,6 +774,46 @@ const [processingStatus, setProcessingStatus] = useState("");
           </div>
         )}
 
+
+{jobId && (
+  <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-5">
+
+    <div className="mb-3 flex items-center justify-between">
+      <span className="font-semibold text-slate-800">
+        Backend Processing
+      </span>
+
+      <span className="font-bold text-green-600">
+        {wsProgress}%
+      </span>
+    </div>
+
+    <div className="h-4 overflow-hidden rounded-full bg-green-100">
+      <div
+        className="h-full rounded-full bg-green-600 transition-all duration-500"
+        style={{
+          width: `${wsProgress}%`,
+        }}
+      />
+    </div>
+
+    <p className="mt-3 text-sm font-medium text-slate-600">
+      {wsStatus || "Waiting for updates..."}
+    </p>
+
+    <div className="mt-3 flex gap-6 text-sm text-slate-600">
+      <span>
+        Processed: <strong>{processedRows}</strong>
+      </span>
+
+      <span>
+        Failed: <strong>{failedRows}</strong>
+      </span>
+    </div>
+
+  </div>
+)}
+
         {/* ==============================
             ERROR MESSAGE
         ============================== */}
@@ -989,6 +1125,47 @@ const [processingStatus, setProcessingStatus] = useState("");
     </button>
   </div>
 </div>
+
+
+{jobId && (
+  <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-5">
+
+    <div className="mb-3 flex items-center justify-between">
+      <span className="font-semibold text-slate-800">
+        Backend Processing
+      </span>
+
+      <span className="font-bold text-green-600">
+        {wsProgress}%
+      </span>
+    </div>
+
+    <div className="h-4 overflow-hidden rounded-full bg-green-100">
+      <div
+        className="h-full rounded-full bg-green-600 transition-all duration-500"
+        style={{
+          width: `${wsProgress}%`,
+        }}
+      />
+    </div>
+
+    <p className="mt-3 text-sm font-medium text-slate-600">
+      {wsStatus || "Waiting for processing updates..."}
+    </p>
+
+    <div className="mt-3 flex gap-6 text-sm text-slate-600">
+      <span>
+        Processed: <strong>{processedRows}</strong>
+      </span>
+
+      <span>
+        Failed: <strong>{failedRows}</strong>
+      </span>
+    </div>
+
+  </div>
+)}
+
       {/* ==============================
           CSV PREVIEW
       ============================== */}
@@ -1107,5 +1284,8 @@ const [processingStatus, setProcessingStatus] = useState("");
     </div>
   );
 }
+
+
+
 
 export default Upload;
