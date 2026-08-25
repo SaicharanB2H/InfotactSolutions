@@ -26,7 +26,8 @@ const [failedRows, setFailedRows] = useState(0);
   const [processing, setProcessing] = useState(false);
 const [processingProgress, setProcessingProgress] = useState(0);
 const [processingStatus, setProcessingStatus] = useState("");
-
+const [jobStatus, setJobStatus] = useState("");
+const [jobError, setJobError] = useState("");
 
  
   const [transformRules, setTransformRules] = useState({
@@ -50,9 +51,13 @@ const uploadToBackend = async () => {
   }
 
   try {
-    setError("");
-    setWsStatus("Uploading file...");
-    setWsProgress(0);
+   setError("");
+setJobError("");
+setJobStatus("uploading");
+setWsStatus("Uploading file...");
+setWsProgress(0);
+setProcessedRows(0);
+setFailedRows(0);
 
     const formData = new FormData();
 
@@ -77,14 +82,20 @@ const uploadToBackend = async () => {
     console.log("Upload response:", data);
 
     setJobId(data.jobId);
+setJobStatus("processing");
 
-    // Connect to WebSocket after receiving jobId
-    connectWebSocket(data.jobId);
+connectWebSocket(data.jobId);
 
-    setWsStatus("Processing started...");
+setWsStatus("Processing started...");
   } catch (error) {
     console.error("Upload error:", error);
-    setError(error.message || "Failed to upload file.");
+
+  setJobStatus("failed");
+  setJobError(error.message || "Failed to upload file.");
+  setError(error.message || "Failed to upload file.");
+
+  setWsStatus("Upload failed");
+
   }
 };
 
@@ -105,13 +116,29 @@ const uploadToBackend = async () => {
       const data = JSON.parse(event.data);
 
       console.log("WebSocket message:", data);
+if (data.event === "progress") {
+  const status = data.status ?? "processing";
 
-      if (data.event === "progress") {
-        setWsProgress(data.percentage ?? 0);
-        setWsStatus(data.status ?? "processing");
-        setProcessedRows(data.processedRows ?? 0);
-        setFailedRows(data.failedRows ?? 0);
-      }
+  setWsProgress(data.percentage ?? 0);
+  setWsStatus(status);
+  setProcessedRows(data.processedRows ?? 0);
+  setFailedRows(data.failedRows ?? 0);
+  setJobStatus(status);
+
+  if (status === "completed") {
+    setWsProgress(100);
+    setWsStatus("Processing completed successfully");
+  }
+
+  if (status === "failed") {
+    setJobError(data.error || "ETL processing failed.");
+    setWsStatus("Processing failed");
+  }
+
+  if (status === "cancelled") {
+    setWsStatus("Processing cancelled");
+  }
+}
 
       if (data.event === "connected") {
         console.log("Connected to job:", data.jobId);
@@ -121,10 +148,14 @@ const uploadToBackend = async () => {
     }
   };
 
-  ws.onerror = (error) => {
-    console.error("WebSocket error:", error);
-        setWsStatus("WebSocket connection error");
-  };
+ws.onerror = (error) => {
+  console.error("WebSocket error:", error);
+
+  setWsStatus("Live progress connection failed");
+  setJobError(
+    "Unable to receive live processing updates. The backend job may still be running."
+  );
+};
 
   ws.onclose = () => {
     console.log("WebSocket disconnected");
@@ -846,6 +877,41 @@ const uploadToBackend = async () => {
         )}
       </div>
 
+
+
+
+
+{jobStatus === "processing" && (
+  <p className="mb-3 font-medium text-blue-600">
+    Processing your CSV file...
+  </p>
+)}
+
+{jobStatus === "completed" && (
+  <p className="mb-3 font-medium text-green-600">
+    ✓ Processing completed successfully
+  </p>
+)}
+
+{jobStatus === "failed" && (
+  <p className="mb-3 font-medium text-red-600">
+    ✕ Processing failed
+  </p>
+)}
+
+{jobStatus === "cancelled" && (
+  <p className="mb-3 font-medium text-orange-600">
+    ⚠ Processing cancelled
+  </p>
+)}
+
+{jobError && (
+  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
+    <p className="text-sm font-medium text-red-600">
+      {jobError}
+    </p>
+  </div>
+)}
       {/* ==============================
           PROGRESS BAR
       ============================== */}
