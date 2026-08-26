@@ -29,6 +29,12 @@ const [processingStatus, setProcessingStatus] = useState("");
 const [jobStatus, setJobStatus] = useState("");
 const [jobError, setJobError] = useState("");
 
+const [bulkInsertLoading, setBulkInsertLoading] = useState(false);
+const [bulkInsertProgress, setBulkInsertProgress] = useState(0);
+const [bulkInsertStatus, setBulkInsertStatus] = useState("");
+const [bulkInsertError, setBulkInsertError] = useState("");
+const [bulkInsertSuccess, setBulkInsertSuccess] = useState(false);
+
  
   const [transformRules, setTransformRules] = useState({
   trim: false,
@@ -264,6 +270,87 @@ ws.onerror = (error) => {
   setTimeout(() => {
     setProcessing(false);
   }, 800);
+};
+
+// ==============================
+// BULK INSERT
+// ==============================
+const handleBulkInsert = async () => {
+  if (!rows.length) {
+    setBulkInsertError("No CSV records available for bulk insert.");
+    return;
+  }
+
+  try {
+    setBulkInsertLoading(true);
+    setBulkInsertProgress(0);
+    setBulkInsertStatus("Preparing records...");
+    setBulkInsertError("");
+    setBulkInsertSuccess(false);
+
+    // Simulate preparation progress
+    setBulkInsertProgress(20);
+
+    const records = rows.map((row) => ({
+      ...row,
+    }));
+
+    setBulkInsertStatus("Sending records to server...");
+    setBulkInsertProgress(40);
+
+    /*
+      IMPORTANT:
+      Replace this endpoint with the actual bulk-insert
+      endpoint provided by your backend developer.
+
+      Example:
+      POST /api/jobs/:id/bulk-insert
+    */
+
+    const response = await fetch(
+      "http://localhost:5000/api/bulk-insert",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          records,
+          jobId,
+          totalRecords: records.length,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error?.message ||
+        data?.message ||
+        "Bulk insert failed."
+      );
+    }
+
+    setBulkInsertProgress(100);
+    setBulkInsertStatus("Bulk insert completed successfully.");
+    setBulkInsertSuccess(true);
+
+    console.log("Bulk insert response:", data);
+
+  } catch (error) {
+    console.error("Bulk insert error:", error);
+
+    setBulkInsertProgress(0);
+    setBulkInsertStatus("Bulk insert failed.");
+    setBulkInsertError(
+      error.message || "Failed to insert records."
+    );
+    setBulkInsertSuccess(false);
+
+  } finally {
+    setBulkInsertLoading(false);
+  }
 };
   // ==============================
   // RESET DATA
@@ -1227,6 +1314,137 @@ ws.onerror = (error) => {
       <span>
         Failed: <strong>{failedRows}</strong>
       </span>
+    </div>
+
+  </div>
+)}
+
+{/* ==============================
+    BULK INSERT
+============================== */}
+{rows.length > 0 && (
+  <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+
+    {/* Header */}
+    <div className="mb-6">
+      <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+        Bulk Insert
+      </h2>
+
+      <p className="mt-1 text-sm text-slate-500 sm:text-base">
+        Insert all processed CSV records into the backend at once.
+      </p>
+    </div>
+
+    {/* Record information */}
+    <div className="rounded-xl bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
+        <div>
+          <p className="text-sm text-slate-500">
+            Records ready for insertion
+          </p>
+
+          <p className="mt-1 text-2xl font-bold text-slate-900">
+            {rows.length}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-sm text-slate-500">
+            Columns
+          </p>
+
+          <p className="mt-1 text-2xl font-bold text-slate-900">
+            {columns.length}
+          </p>
+        </div>
+
+      </div>
+    </div>
+
+    {/* Progress */}
+    {bulkInsertLoading && (
+      <div className="mt-5">
+
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-sm font-medium text-slate-700">
+            {bulkInsertStatus}
+          </span>
+
+          <span className="text-sm font-semibold text-blue-600">
+            {bulkInsertProgress}%
+          </span>
+        </div>
+
+        <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+
+          <div
+            className="h-full rounded-full bg-blue-600 transition-all duration-300"
+            style={{
+              width: `${bulkInsertProgress}%`,
+            }}
+          />
+
+        </div>
+
+      </div>
+    )}
+
+    {/* Success */}
+    {bulkInsertSuccess && (
+      <div className="mt-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+        <p className="text-sm font-medium text-green-700">
+          ✓ {bulkInsertStatus}
+        </p>
+      </div>
+    )}
+
+    {/* Error */}
+    {bulkInsertError && (
+      <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+        <p className="text-sm font-medium text-red-600">
+          ✕ {bulkInsertError}
+        </p>
+      </div>
+    )}
+
+    {/* Status */}
+    {!bulkInsertLoading &&
+      !bulkInsertSuccess &&
+      !bulkInsertError && (
+        <p className="mt-5 text-sm text-slate-500">
+          {rows.length} records are ready for bulk insertion.
+        </p>
+      )}
+
+    {/* Button */}
+    <div className="mt-5">
+
+      <button
+        type="button"
+        onClick={handleBulkInsert}
+        disabled={bulkInsertLoading || rows.length === 0}
+        className="
+          w-full
+          rounded-lg
+          bg-green-600
+          px-6
+          py-3
+          font-semibold
+          text-white
+          transition
+          hover:bg-green-700
+          disabled:cursor-not-allowed
+          disabled:bg-slate-300
+          sm:w-auto
+        "
+      >
+        {bulkInsertLoading
+          ? "Inserting Records..."
+          : "Bulk Insert Records"}
+      </button>
+
     </div>
 
   </div>
