@@ -5,6 +5,7 @@ import Register from "../pages/Register/Register";
 import Dashboard from "../pages/Dashboard/Dashboard";
 import Upload from "../pages/Upload/Upload";
 import ProtectedRoute from "../components/ProtectedRoute";
+import ImportHistory from "../pages/ImportHistory/ImportHistory";
 
 function AppRoutes() {
   return (
@@ -31,6 +32,7 @@ function AppRoutes() {
           </div>
         }
       />
+      <Route path="/import-history" element={<ImportHistory />} />
     </Routes>
   );
 }
