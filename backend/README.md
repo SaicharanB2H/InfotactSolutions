@@ -75,16 +75,16 @@ It processes multi-gigabyte CSV and JSON datasets (5M+ rows) without loading ent
 
 ## ⚙️ Installation & Environment Setup
 
-### 1. Clone & Install Dependencies
+### 1. Install Dependencies
 
 ```bash
-cd infotact_backend
+cd backend
 npm install
 ```
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the project root:
+Create or edit `.env` in the `backend/` directory:
 
 ```env
 PORT=5000
@@ -110,7 +110,6 @@ NODE_ENV=development
 Ensure local MongoDB is running:
 
 ```bash
-# Windows / Mac / Linux local MongoDB service
 mongod --dbpath /data/db
 ```
 
@@ -132,7 +131,7 @@ npm start
 
 ---
 
-## 🧪 Testing & Memory Audits
+## 🧪 Testing & Performance Audits
 
 ### Run Automated Unit & Integration Tests
 
@@ -156,48 +155,29 @@ npm run memory-test
 
 ## 📡 API Endpoints Reference
 
-### 1. Health Checks
+### 1. Authentication (`/api/auth`)
+* `POST /api/auth/register`: Create user account (`{ name, email, password }`).
+* `POST /api/auth/login`: Authenticate user (`{ email, password }`).
+
+### 2. Health Checks (`/api/health`)
 * `GET /api/health`: Check server and database connection status.
 * `GET /api/health/ready`: Readiness probe for deployment.
 
-### 2. Streaming File Upload
-* `POST /api/upload`: Multipart upload with field `file` and optional field `pipelineId`.
+### 3. CSV Preview (`/api/preview`)
+* `POST /api/preview`: Multipart parse of first 1,000 rows (`file`).
+
+### 4. Streaming File Upload (`/api/upload`)
+* `POST /api/upload`: Multipart upload with field `file` and optional `pipelineId`.
   * Response: `{ "success": true, "jobId": "uuid", "fileName": "...", "fileSize": 1048576 }`
 
-### 3. Pipeline Definitions (CRUD)
+### 5. Pipeline Definitions CRUD (`/api/pipelines`)
 * `POST /api/pipelines`: Create ETL pipeline configuration.
 * `GET /api/pipelines`: List all pipeline configurations.
 * `GET /api/pipelines/:id`: Get pipeline details by ID.
 * `PUT /api/pipelines/:id`: Update pipeline details.
 * `DELETE /api/pipelines/:id`: Delete pipeline configuration.
 
-#### Pipeline JSON Example:
-
-```json
-{
-  "name": "Customer Import Pipeline",
-  "sourceFormat": "CSV",
-  "destinationCollection": "customers",
-  "mapping": {
-    "firstName": "Column A",
-    "email": "Column B",
-    "age": "age"
-  },
-  "transformations": [
-    {
-      "sourceField": "firstName",
-      "targetField": "firstName",
-      "code": "return value.toUpperCase();"
-    }
-  ],
-  "validationRules": {
-    "email": { "required": true, "type": "email" },
-    "age": { "type": "number", "min": 18 }
-  }
-}
-```
-
-### 4. Job Control & Management
+### 6. Job Control & Management (`/api/jobs`)
 * `POST /api/jobs/:jobId/start`: Start executing an uploaded job.
 * `GET /api/jobs/:jobId`: Get current progress metrics & job status.
 * `POST /api/jobs/:jobId/cancel`: Cancel an actively processing job.
@@ -208,7 +188,7 @@ npm run memory-test
 
 ## 🔌 WebSocket Real-Time Progress API
 
-Connect from your frontend using standard WebSockets:
+Connect using standard WebSockets:
 
 ```javascript
 const socket = new WebSocket('ws://localhost:5000/ws/jobs/YOUR_JOB_ID');
