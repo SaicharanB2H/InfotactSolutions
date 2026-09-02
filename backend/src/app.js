@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
+import authRoutes from "./routes/auth.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import pipelineRoutes from "./routes/pipeline.routes.js";
 import jobRoutes from "./routes/job.routes.js";
@@ -43,6 +44,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
+app.use("/api/auth", authRoutes);
 app.use("/api/preview", previewRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/pipelines", pipelineRoutes);

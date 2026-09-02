@@ -1,1979 +1,430 @@
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
+import Papa from "papaparse";
 import { FixedSizeList } from "react-window";
-
+import Layout from "../../components/layout/Layout";
 import { uploadFile } from "../../services/uploadService";
 import { createPipeline } from "../../services/pipelineService";
+import { startJob } from "../../services/jobService";
 import { previewCsv } from "../../services/previewService";
+import { useNavigate } from "react-router-dom";
+import {
+  FiUploadCloud,
+  FiFileText,
+  FiSliders,
+  FiDatabase,
+  FiPlay,
+  FiCheckCircle,
+  FiAlertCircle,
+  FiZap,
+  FiTrash2
+} from "react-icons/fi";
 
-function Upload() {
-  // ==========================================
-  // WEBSOCKET
-  // ==========================================
-  const wsRef = useRef(null);
-
-  const [jobId, setJobId] = useState(null);
-  const [pipelineId, setPipelineId] = useState(null);
-
-  const [wsProgress, setWsProgress] = useState(0);
-  const [wsStatus, setWsStatus] = useState("");
-
-  const [processedRows, setProcessedRows] = useState(0);
-  const [failedRows, setFailedRows] = useState(0);
-
-  // ==========================================
-  // CSV PARSING / FILE
-  // ==========================================
-  const hasColumnsRef = useRef(false);
-  const hasRowsRef = useRef(false);
-  const hasParseErrorsRef = useRef(false);
+export function Upload() {
   const fileInputRef = useRef(null);
+  const navigate = useNavigate();
 
+  // State
   const [file, setFile] = useState(null);
-  const [progress, setProgress] = useState(0);
-
-  const [rows, setRows] = useState([]);
+  const [pipelineName, setPipelineName] = useState("");
+  const [destinationCollection, setDestinationCollection] = useState("");
   const [columns, setColumns] = useState([]);
-
-  const [isUploading, setIsUploading] = useState(false);
-
-  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
 
-  // ==========================================
-  // FRONTEND TRANSFORMATION PROCESSING
-  // ==========================================
-  const [processing, setProcessing] = useState(false);
-  const [processingProgress, setProcessingProgress] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState("");
-
-  // ==========================================
-  // JOB STATUS
-  // ==========================================
-  const [jobStatus, setJobStatus] = useState("");
-  const [jobError, setJobError] = useState("");
-
-  // ==========================================
-  // BULK INSERT
-  // ==========================================
-  const [bulkInsertLoading, setBulkInsertLoading] = useState(false);
-  const [bulkInsertProgress, setBulkInsertProgress] = useState(0);
-  const [bulkInsertStatus, setBulkInsertStatus] = useState("");
-  const [bulkInsertError, setBulkInsertError] = useState("");
-  const [bulkInsertSuccess, setBulkInsertSuccess] = useState(false);
-
-  // ==========================================
-  // TRANSFORMATION RULES
-  // ==========================================
+  // Transformation Rules State
   const [transformRules, setTransformRules] = useState({
-    trim: false,
+    trim: true,
     uppercase: false,
     lowercase: false,
     removeEmpty: false,
-    removeDuplicates: false,
   });
 
-  // ==========================================
-  // SELECTED RULE COUNT
-  // ==========================================
-  const selectedRuleCount = Object.values(transformRules).filter(
-    Boolean
-  ).length;
-
-  const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
-  // ==========================================
-  // GET SELECTED TRANSFORMATIONS
-  // ==========================================
-  const getSelectedTransformations = () => {
-    return Object.entries(transformRules)
-      .filter(([_, enabled]) => enabled)
-      .map(([rule]) => rule);
-  };
-
-  // ==========================================
-  // TRANSFORMATION RULE CHANGE
-  // ==========================================
   const handleTransformRuleChange = (rule) => {
-    setTransformRules((previousRules) => ({
-      ...previousRules,
-      [rule]: !previousRules[rule],
+    setTransformRules((prev) => ({
+      ...prev,
+      [rule]: !prev[rule],
     }));
   };
 
-  // ==========================================
-  // CREATE PIPELINE FOR UPLOAD
-  // ==========================================
-  const createPipelineForUpload = async () => {
-    try {
-      const selectedTransformations =
-        getSelectedTransformations();
+  // Process File Selection
+  const handleFileSelect = (selectedFile) => {
+    if (!selectedFile) return;
 
-      const pipelineData = {
-        name: `CSV Pipeline - ${file?.name || "Import"}`,
+    setFile(selectedFile);
+    setError("");
+    setSuccessMsg("");
 
-        mappings: columns.map((column) => ({
-          source: column,
-          destination: column,
-        })),
+    const baseName = selectedFile.name.replace(/\.[^/.]+$/, "");
+    if (!pipelineName) {
+      setPipelineName(`${baseName} Pipeline`);
+    }
+    if (!destinationCollection) {
+      const cleanCol = baseName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      setDestinationCollection(`import_${cleanCol}`);
+    }
 
-        transformations: selectedTransformations,
+    // Parse CSV preview locally or via API
+    setLoading(true);
+    Papa.parse(selectedFile, {
+      header: true,
+      skipEmptyLines: true,
+      preview: 1000,
+      complete: (results) => {
+        setLoading(false);
+        if (results.meta && results.meta.fields) {
+          setColumns(results.meta.fields);
+          setRows(results.data || []);
+          setSuccessMsg(`Parsed ${results.data.length} preview rows successfully.`);
+        }
+      },
+      error: (err) => {
+        setLoading(false);
+        console.error("PapaParse error:", err);
+        // Fallback to preview service
+        previewCsv(selectedFile)
+          .then((res) => {
+            if (res?.success) {
+              setColumns(res.columns || []);
+              setRows(res.rows || []);
+            }
+          })
+          .catch((e) => setError("Failed to parse CSV file."));
+      },
+    });
+  };
 
-        validationRules: [],
-      };
+  // Drag & Drop Handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
 
-      console.log(
-        "Creating pipeline with transformations:",
-        pipelineData
-      );
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
 
-      const data = await createPipeline(pipelineData);
-
-      console.log("Pipeline created:", data);
-
-      setPipelineId(data._id);
-
-      return data._id;
-    } catch (error) {
-      console.error("Pipeline creation error:", error);
-
-      const message =
-        error.response?.data?.error?.message ||
-        error.message ||
-        "Failed to create pipeline.";
-
-      setError(message);
-
-      return null;
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
     }
   };
 
-  // ==========================================
-  // TEST CREATE PIPELINE
-  // ==========================================
-  const testCreatePipeline = async () => {
-    try {
-      setError("");
-
-      if (!columns.length) {
-        setError("Please select and preview a CSV file first.");
-        return;
-      }
-
-      const selectedTransformations =
-        getSelectedTransformations();
-
-      const pipelineData = {
-        name: `Test Pipeline - ${file?.name || "CSV Import"}`,
-
-        mappings: columns.map((column) => ({
-          source: column,
-          destination: column,
-        })),
-
-        transformations: selectedTransformations,
-
-        validationRules: [],
-      };
-
-      console.log(
-        "Sending pipeline data:",
-        pipelineData
-      );
-
-      const data = await createPipeline(pipelineData);
-
-      console.log(
-        "Pipeline API response:",
-        data
-      );
-
-      setPipelineId(data._id);
-
-      setWsStatus("Pipeline created successfully.");
-    } catch (error) {
-      console.error(
-        "Pipeline creation error:",
-        error
-      );
-
-      const message =
-        error.response?.data?.error?.message ||
-        error.message ||
-        "Failed to create pipeline.";
-
-      setError(message);
+  // Build Transformations Array for Backend
+  const getSelectedTransformations = () => {
+    const list = [];
+    if (transformRules.trim) {
+      columns.forEach((col) => {
+        list.push({ sourceField: col, targetField: col, code: "return String(value).trim();" });
+      });
     }
+    if (transformRules.uppercase) {
+      columns.forEach((col) => {
+        list.push({ sourceField: col, targetField: col, code: "return String(value).toUpperCase();" });
+      });
+    }
+    if (transformRules.lowercase) {
+      columns.forEach((col) => {
+        list.push({ sourceField: col, targetField: col, code: "return String(value).toLowerCase();" });
+      });
+    }
+    return list;
   };
 
-  // ==========================================
-  // UPLOAD CSV TO BACKEND
-  // ==========================================
-  const uploadToBackend = async () => {
+  // Trigger Upload & Job Processing
+  const handleStartETL = async () => {
     if (!file) {
       setError("Please select a CSV file first.");
       return;
     }
 
+    const colName = destinationCollection || `import_${Date.now()}`;
+    const pipeName = pipelineName || `CSV Pipeline - ${file.name}`;
+
     try {
+      setLoading(true);
       setError("");
-      setJobError("");
 
-      setJobStatus("uploading");
-      setWsStatus("Uploading file...");
-
-      setWsProgress(0);
-      setProcessedRows(0);
-      setFailedRows(0);
-
-      // ======================================
-      // MAKE SURE PIPELINE EXISTS
-      // ======================================
-      let currentPipelineId = pipelineId;
-
-      if (!currentPipelineId) {
-        currentPipelineId =
-          await createPipelineForUpload();
-
-        if (!currentPipelineId) {
-          setJobStatus("failed");
-          setWsStatus(
-            "Pipeline creation failed"
-          );
-          return;
-        }
-      }
-
-      console.log(
-        "Uploading CSV with pipeline:",
-        currentPipelineId
-      );
-
-      // ======================================
-      // UPLOAD CSV
-      // ======================================
-      const data = await uploadFile(
-        file,
-        currentPipelineId
-      );
-
-      console.log(
-        "Upload API response:",
-        data
-      );
-
-      // ======================================
-      // SAVE IMPORT HISTORY
-      // ======================================
-      const existingImports = JSON.parse(
-        localStorage.getItem(
-          "streamweaver_imports"
-        ) || "[]"
-      );
-
-      const newImport = {
-        jobId: data.jobId,
-        fileName:
-          data.fileName || file.name,
-        totalBytes:
-          data.totalBytes || file.size,
-        createdAt:
-          new Date().toISOString(),
-      };
-
-      localStorage.setItem(
-        "streamweaver_imports",
-        JSON.stringify([
-          newImport,
-          ...existingImports,
-        ])
-      );
-
-      console.log(
-        "Import saved for history:",
-        newImport
-      );
-
-      // ======================================
-      // SET JOB
-      // ======================================
-      setJobId(data.jobId);
-      setJobStatus("processing");
-      setWsStatus("Processing started...");
-      setWsProgress(0);
-
-      // ======================================
-      // CONNECT WEBSOCKET
-      // ======================================
-      connectWebSocket(data.jobId);
-    } catch (error) {
-      console.error(
-        "Upload error:",
-        error
-      );
-
-      const message =
-        error.response?.data?.error?.message ||
-        error.message ||
-        "Failed to upload CSV file.";
-
-      setJobStatus("failed");
-      setJobError(message);
-      setError(message);
-      setWsStatus("Upload failed");
-    }
-  };
-
-  // ==========================================
-  // WEBSOCKET CONNECTION
-  // ==========================================
-  const connectWebSocket = (jobId) => {
-    const ws = new WebSocket(
-      `ws://localhost:5000/ws/jobs/${jobId}`
-    );
-
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-
-      setWsStatus(
-        "Connected to processing job"
-      );
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(
-          event.data
-        );
-
-        console.log(
-          "WebSocket message:",
-          data
-        );
-
-        // ==================================
-        // PROGRESS EVENT
-        // ==================================
-        if (data.event === "progress") {
-          const status =
-            data.status ?? "processing";
-
-          setWsProgress(
-            data.percentage ?? 0
-          );
-
-          setWsStatus(status);
-
-          setProcessedRows(
-            data.rowsProcessed ?? 0
-          );
-
-          setFailedRows(
-            data.rowsFailed ?? 0
-          );
-
-          setJobStatus(status);
-
-          if (status === "completed") {
-            setWsProgress(100);
-
-            setWsStatus(
-              "Processing completed successfully"
-            );
-          }
-
-          if (status === "failed") {
-            setJobError(
-              data.error ||
-                "ETL processing failed."
-            );
-
-            setWsStatus(
-              "Processing failed"
-            );
-          }
-
-          if (status === "cancelled") {
-            setWsStatus(
-              "Processing cancelled"
-            );
-          }
-        }
-
-        // ==================================
-        // CONNECTED EVENT
-        // ==================================
-        if (data.event === "connected") {
-          console.log(
-            "Connected to job:",
-            data.jobId
-          );
-        }
-      } catch (error) {
-        console.error(
-          "WebSocket message error:",
-          error
-        );
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error(
-        "WebSocket error:",
-        error
-      );
-
-      setWsStatus(
-        "Live progress connection failed"
-      );
-
-      setJobError(
-        "Unable to receive live processing updates. The backend job may still be running."
-      );
-    };
-
-    ws.onclose = () => {
-      console.log(
-        "WebSocket disconnected"
-      );
-    };
-  };
-
-  // ==========================================
-  // APPLY FRONTEND TRANSFORMATIONS
-  // ==========================================
-  const applyTransformations = () => {
-    if (
-      !rows.length ||
-      selectedRuleCount === 0
-    ) {
-      return;
-    }
-
-    setProcessing(true);
-    setProcessingProgress(0);
-    setProcessingStatus(
-      "Starting transformation..."
-    );
-
-    let transformedRows = [...rows];
-
-    // ======================================
-    // STEP 1 - TRIM
-    // ======================================
-    if (transformRules.trim) {
-      setProcessingStatus(
-        "Trimming whitespace..."
-      );
-
-      setProcessingProgress(20);
-
-      transformedRows =
-        transformedRows.map((row) => {
-          const newRow = {};
-
-          columns.forEach((column) => {
-            newRow[column] =
-              typeof row[column] === "string"
-                ? row[column].trim()
-                : row[column];
-          });
-
-          return newRow;
-        });
-    }
-
-    // ======================================
-    // STEP 2 - UPPERCASE / LOWERCASE
-    // ======================================
-    if (
-      transformRules.uppercase ||
-      transformRules.lowercase
-    ) {
-      setProcessingStatus(
-        "Applying text transformations..."
-      );
-
-      setProcessingProgress(40);
-
-      transformedRows =
-        transformedRows.map((row) => {
-          const newRow = {};
-
-          columns.forEach((column) => {
-            let value = row[column];
-
-            if (typeof value === "string") {
-              if (transformRules.uppercase) {
-                value = value.toUpperCase();
-              }
-
-              if (transformRules.lowercase) {
-                value = value.toLowerCase();
-              }
-            }
-
-            newRow[column] = value;
-          });
-
-          return newRow;
-        });
-    }
-
-    // ======================================
-    // STEP 3 - REMOVE EMPTY ROWS
-    // ======================================
-    if (transformRules.removeEmpty) {
-      setProcessingStatus(
-        "Removing empty rows..."
-      );
-
-      setProcessingProgress(60);
-
-      transformedRows =
-        transformedRows.filter((row) =>
-          columns.some(
-            (column) =>
-              row[column] !== null &&
-              row[column] !== undefined &&
-              String(
-                row[column]
-              ).trim() !== ""
-          )
-        );
-    }
-
-    // ======================================
-    // STEP 4 - REMOVE DUPLICATES
-    // ======================================
-    if (
-      transformRules.removeDuplicates
-    ) {
-      setProcessingStatus(
-        "Removing duplicate rows..."
-      );
-
-      setProcessingProgress(80);
-
-      const uniqueRows = [];
-      const seen = new Set();
-
-      transformedRows.forEach((row) => {
-        const key = JSON.stringify(row);
-
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniqueRows.push(row);
-        }
+      // Default auto-mapping object
+      const mappingObj = {};
+      columns.forEach((c) => {
+        mappingObj[c] = c.toLowerCase().replace(/[^a-z0-9]/g, "_");
       });
 
-      transformedRows = uniqueRows;
-    }
+      // 1. Create pipeline definition with required destinationCollection & name
+      const pipelinePayload = {
+        name: pipeName,
+        destinationCollection: colName,
+        sourceFormat: file.name.endsWith(".json") ? "JSON" : "CSV",
+        mapping: mappingObj,
+        transformations: getSelectedTransformations(),
+        validationRules: {},
+      };
 
-    // ======================================
-    // FINISH
-    // ======================================
-    setProcessingStatus(
-      "Transformation completed!"
-    );
+      const pipeRes = await createPipeline(pipelinePayload);
+      const pipelineId = pipeRes?.data?._id || pipeRes?._id || pipeRes?.id;
 
-    setProcessingProgress(100);
-
-    setRows(transformedRows);
-
-    setTimeout(() => {
-      setProcessing(false);
-    }, 800);
-  };
-
-  // ==========================================
-  // BULK INSERT
-  // ==========================================
-  const handleBulkInsert = async () => {
-    if (!rows.length) {
-      setBulkInsertError(
-        "No CSV records available for bulk insert."
-      );
-
-      return;
-    }
-
-    try {
-      setBulkInsertLoading(true);
-      setBulkInsertProgress(0);
-      setBulkInsertStatus(
-        "Preparing records..."
-      );
-      setBulkInsertError("");
-      setBulkInsertSuccess(false);
-
-      setBulkInsertProgress(20);
-
-      const records = rows.map((row) => ({
-        ...row,
-      }));
-
-      setBulkInsertStatus(
-        "Sending records to server..."
-      );
-
-      setBulkInsertProgress(40);
-
-      const response = await fetch(
-        "http://localhost:5000/api/bulk-insert",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            records,
-            jobId,
-            totalRecords:
-              records.length,
-          }),
-        }
-      );
-
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error?.message ||
-            data?.message ||
-            "Bulk insert failed."
-        );
+      if (!pipelineId) {
+        throw new Error("Pipeline creation returned invalid ID.");
       }
 
-      setBulkInsertProgress(100);
+      // 2. Upload file attached to pipeline ID
+      const uploadRes = await uploadFile(file, pipelineId);
+      const jobId = uploadRes?.jobId;
 
-      setBulkInsertStatus(
-        "Bulk insert completed successfully."
-      );
-
-      setBulkInsertSuccess(true);
-
-      console.log(
-        "Bulk insert response:",
-        data
-      );
-    } catch (error) {
-      console.error(
-        "Bulk insert error:",
-        error
-      );
-
-      setBulkInsertProgress(0);
-
-      setBulkInsertStatus(
-        "Bulk insert failed."
-      );
-
-      setBulkInsertError(
-        error.message ||
-          "Failed to insert records."
-      );
-
-      setBulkInsertSuccess(false);
-    } finally {
-      setBulkInsertLoading(false);
-    }
-  };
-
-  // ==========================================
-  // RESET PREVIEW
-  // ==========================================
-  const resetPreview = () => {
-    setRows([]);
-    setColumns([]);
-    setProgress(0);
-
-    setTransformRules({
-      trim: false,
-      uppercase: false,
-      lowercase: false,
-      removeEmpty: false,
-      removeDuplicates: false,
-    });
-
-    hasColumnsRef.current = false;
-    hasRowsRef.current = false;
-    hasParseErrorsRef.current = false;
-  };
-
-  // ==========================================
-  // OPEN FILE PICKER
-  // ==========================================
-  const handleChooseFile = () => {
-    if (!isUploading) {
-      fileInputRef.current?.click();
-    }
-  };
-
-  // ==========================================
-  // CSV VALIDATION
-  // ==========================================
-  const validateCSVFile = (
-    selectedFile
-  ) => {
-    if (!selectedFile) {
-      return "Please select a file.";
-    }
-
-    if (
-      !selectedFile.name
-        .toLowerCase()
-        .endsWith(".csv")
-    ) {
-      return "Invalid file type. Please select a CSV file.";
-    }
-
-    if (selectedFile.size === 0) {
-      return "The selected CSV file is empty.";
-    }
-
-    if (
-      selectedFile.size >
-      MAX_FILE_SIZE
-    ) {
-      return "File is too large. Maximum allowed size is 10 MB.";
-    }
-
-    return "";
-  };
-
-  // ==========================================
-  // PROCESS SELECTED FILE
-  // ==========================================
-  const processSelectedFile = (
-    selectedFile
-  ) => {
-    if (!selectedFile) {
-      return;
-    }
-
-    setError("");
-
-    resetPreview();
-
-    setJobId(null);
-    setJobStatus("");
-    setJobError("");
-
-    setWsProgress(0);
-    setWsStatus("");
-
-    const validationError =
-      validateCSVFile(
-        selectedFile
-      );
-
-    if (validationError) {
-      setFile(null);
-      setError(validationError);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value =
-          "";
+      if (!jobId) {
+        throw new Error("Upload did not return a valid jobId.");
       }
 
-      return;
-    }
+      // 3. Start execution job
+      await startJob(jobId, { pipelineId });
 
-    setFile(selectedFile);
-  };
-
-  // ==========================================
-  // FILE PICKER
-  // ==========================================
-  const handleFileChange = (
-    event
-  ) => {
-    const selectedFile =
-      event.target.files?.[0];
-
-    if (!selectedFile) {
-      return;
-    }
-
-    processSelectedFile(
-      selectedFile
-    );
-  };
-
-  // ==========================================
-  // DRAG OVER
-  // ==========================================
-  const handleDragOver = (
-    event
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!isUploading) {
-      setIsDragging(true);
-    }
-  };
-
-  // ==========================================
-  // DRAG LEAVE
-  // ==========================================
-  const handleDragLeave = (
-    event
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setIsDragging(false);
-  };
-
-  // ==========================================
-  // DROP FILE
-  // ==========================================
-  const handleDrop = (
-    event
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setIsDragging(false);
-
-    if (isUploading) {
-      return;
-    }
-
-    const droppedFile =
-      event.dataTransfer.files?.[0];
-
-    if (!droppedFile) {
+      // 4. Redirect to Live Processing Stream Monitor
+      navigate(`/processing/${jobId}`);
+    } catch (err) {
+      console.error("ETL Start Error:", err);
       setError(
-        "No file was dropped."
+        err.response?.data?.error?.message || err.message || "Failed to launch dataset processing."
       );
-
-      return;
-    }
-
-    processSelectedFile(
-      droppedFile
-    );
-  };
-
-  // ==========================================
-  // PREVIEW CSV
-  // ==========================================
-  const handleUpload = async () => {
-    if (!file) {
-      setError(
-        "Please select a CSV file first."
-      );
-
-      return;
-    }
-
-    try {
-      setIsUploading(true);
-      setProgress(0);
-      setError("");
-
-      setRows([]);
-      setColumns([]);
-
-      const data =
-        await previewCsv(file);
-
-      console.log(
-        "Preview API response:",
-        data
-      );
-
-      setColumns(
-        data.columns || []
-      );
-
-      setRows(
-        data.rows || []
-      );
-
-      setProgress(100);
-
-      if (
-        !data.columns ||
-        data.columns.length === 0
-      ) {
-        setError(
-          "Invalid CSV file. No header columns were found."
-        );
-
-        return;
-      }
-
-      if (
-        !data.rows ||
-        data.rows.length === 0
-      ) {
-        setError(
-          "The CSV file does not contain any data rows."
-        );
-
-        return;
-      }
-
-      setError("");
-    } catch (error) {
-      console.error(
-        "CSV preview error:",
-        error
-      );
-
-      const message =
-        error.response?.data?.error
-          ?.message ||
-        error.response?.data
-          ?.message ||
-        error.message ||
-        "Failed to preview CSV file.";
-
-      setError(message);
-
-      setProgress(0);
     } finally {
-      setIsUploading(false);
+      setLoading(false);
     }
   };
 
-  // ==========================================
-  // VIRTUALIZED ROW
-  // ==========================================
-  const VirtualRow = ({
-    index,
-    style,
-  }) => {
-    const row = rows[index];
-
-    if (!row) {
-      return null;
-    }
+  // Virtualized Row Renderer
+  const VirtualRow = ({ index, style }) => {
+    const rowData = rows[index] || {};
+    const isEven = index % 2 === 0;
 
     return (
       <div
         style={style}
-        className="
-          flex
-          border-b
-          border-slate-200
-          bg-white
-          hover:bg-slate-50
-        "
+        className={`flex items-center text-xs font-mono border-b border-slate-800/60 ${
+          isEven ? "bg-slate-950/40" : "bg-slate-900/30"
+        } hover:bg-indigo-500/10 transition-colors`}
       >
-        {columns.map(
-          (column) => (
-            <div
-              key={column}
-              className="
-                w-[180px]
-                sm:w-[200px]
-                md:w-[220px]
-                shrink-0
-                overflow-hidden
-                text-ellipsis
-                whitespace-nowrap
-                px-3
-                sm:px-4
-                py-3
-                text-sm
-                sm:text-base
-                text-slate-700
-              "
-              title={String(
-                row[column] ?? ""
-              )}
-            >
-              {row[column] ?? ""}
-            </div>
-          )
-        )}
+        <div className="w-12 flex-shrink-0 px-3 py-2 text-slate-500 text-right font-sans font-semibold border-r border-slate-800/40">
+          {index + 1}
+        </div>
+        {columns.map((col) => (
+          <div
+            key={col}
+            className="w-48 flex-shrink-0 px-3 py-2 truncate text-slate-300 border-r border-slate-800/30"
+            title={String(rowData[col] ?? "")}
+          >
+            {rowData[col] === undefined || rowData[col] === null || rowData[col] === "" ? (
+              <span className="text-slate-600 italic text-[11px]">&lt;null&gt;</span>
+            ) : (
+              String(rowData[col])
+            )}
+          </div>
+        ))}
       </div>
     );
   };
 
-  // ==========================================
-  // RENDER
-  // ==========================================
   return (
-    <div className="min-h-screen bg-white p-3 sm:p-5 md:p-8">
-
-      {/* PAGE HEADING */}
-      <h1
-        className="
-          text-3xl
-          sm:text-4xl
-          font-bold
-          text-slate-900
-        "
-      >
-        Upload Files
-      </h1>
-
-      <p
-        className="
-          mt-2
-          text-base
-          sm:text-lg
-          text-slate-600
-        "
-      >
-        Upload your CSV files here.
-      </p>
-
-      {/* ======================================
-          UPLOAD AREA
-      ====================================== */}
-      <div
-        onDragOver={handleDragOver}
-        onDragEnter={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`
-          mt-6
-          sm:mt-8
-          flex
-          min-h-[260px]
-          sm:min-h-[300px]
-          flex-col
-          items-center
-          justify-center
-          rounded-xl
-          border-2
-          border-dashed
-          px-4
-          py-8
-          text-center
-          transition-all
-          duration-200
-
-          ${
-            isDragging
-              ? "border-blue-500 bg-blue-50 scale-[1.01]"
-              : "border-slate-300 bg-white"
-          }
-        `}
-      >
-
-        <h2
-          className="
-            text-xl
-            sm:text-2xl
-            font-semibold
-            text-slate-900
-          "
-        >
-          {isDragging
-            ? "Drop CSV File Here"
-            : "Drag & Drop Files Here"}
-        </h2>
-
-        <p
-          className="
-            mt-3
-            text-sm
-            sm:text-lg
-            text-slate-500
-          "
-        >
-          or choose a file from your computer
-        </p>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <button
-          type="button"
-          onClick={handleChooseFile}
-          disabled={isUploading}
-          className="
-            mt-6
-            w-full
-            max-w-[220px]
-            rounded-lg
-            bg-blue-600
-            px-6
-            py-3
-            sm:px-7
-            sm:py-4
-            text-base
-            sm:text-lg
-            font-semibold
-            text-white
-            transition
-            hover:bg-blue-700
-            disabled:cursor-not-allowed
-            disabled:bg-blue-300
-          "
-        >
-          Choose File
-        </button>
-
-        {/* SELECTED FILE */}
-        {file && (
-          <div
-            className="
-              mt-5
-              w-full
-              max-w-md
-              text-center
-            "
-          >
-            <p className="font-semibold text-green-600">
-              File selected successfully
+    <Layout>
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-100 tracking-tight">Quick Dataset Upload</h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Upload CSV or JSON files for high-speed streaming ingestion into MongoDB.
             </p>
-
-            <p
-              className="
-                mt-1
-                break-all
-                text-sm
-                sm:text-base
-                text-slate-700
-              "
-            >
-              {file.name}
-            </p>
-
-            <p className="text-sm text-slate-500">
-              {(file.size / 1024).toFixed(2)} KB
-            </p>
-
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={isUploading}
-              className="
-                mt-4
-                w-full
-                max-w-[220px]
-                rounded-lg
-                bg-green-600
-                px-6
-                py-3
-                font-semibold
-                text-white
-                transition
-                hover:bg-green-700
-                disabled:cursor-not-allowed
-                disabled:bg-green-300
-              "
-            >
-              {isUploading
-                ? "Processing..."
-                : "Upload CSV"}
-            </button>
           </div>
-        )}
+        </div>
 
-        {/* SEND TO BACKEND */}
-        {rows.length > 0 &&
-          columns.length > 0 && (
-            <button
-              type="button"
-              onClick={uploadToBackend}
-              disabled={
-                isUploading ||
-                jobStatus === "processing"
-              }
-              className="
-                mt-3
-                w-full
-                max-w-[220px]
-                rounded-lg
-                bg-purple-600
-                px-6
-                py-3
-                font-semibold
-                text-white
-                transition
-                hover:bg-purple-700
-                disabled:cursor-not-allowed
-                disabled:bg-purple-300
-              "
-            >
-              {jobStatus === "processing"
-                ? "Uploading..."
-                : "Send to Backend"}
-            </button>
-          )}
-
-        {/* BACKEND PROCESSING */}
-        {jobId && (
-          <div className="mt-6 w-full max-w-2xl rounded-2xl border border-green-200 bg-green-50 p-5">
-
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-semibold text-slate-800">
-                Backend Processing
-              </span>
-
-              <span className="font-bold text-green-600">
-                {wsProgress}%
-              </span>
-            </div>
-
-            <div className="h-4 overflow-hidden rounded-full bg-green-100">
-              <div
-                className="h-full rounded-full bg-green-600 transition-all duration-500"
-                style={{
-                  width: `${wsProgress}%`,
-                }}
-              />
-            </div>
-
-            <p className="mt-3 text-sm font-medium text-slate-600">
-              {wsStatus ||
-                "Waiting for updates..."}
-            </p>
-
-            <div className="mt-3 flex gap-6 text-sm text-slate-600">
-              <span>
-                Processed:{" "}
-                <strong>
-                  {processedRows}
-                </strong>
-              </span>
-
-              <span>
-                Failed:{" "}
-                <strong>
-                  {failedRows}
-                </strong>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* ERROR */}
+        {/* Error Alert */}
         {error && (
+          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+            <FiAlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Success Alert */}
+        {successMsg && (
+          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <FiCheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Main Upload Card */}
+        <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-6">
+          {/* Dropzone */}
           <div
-            className="
-              mt-5
-              w-full
-              max-w-2xl
-              rounded-lg
-              border
-              border-red-200
-              bg-red-50
-              px-4
-              py-3
-              text-center
-            "
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`p-10 border-2 border-dashed rounded-2xl text-center transition-all ${
+              isDragging
+                ? "border-indigo-500 bg-indigo-500/10 scale-[1.01]"
+                : "border-slate-800 hover:border-indigo-500/40 bg-slate-950/60"
+            }`}
           >
-            <p className="text-sm sm:text-base font-medium text-red-600">
-              {error}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* JOB STATUS */}
-      {jobStatus === "processing" && (
-        <p className="mb-3 font-medium text-blue-600">
-          Processing your CSV file...
-        </p>
-      )}
-
-      {jobStatus === "completed" && (
-        <p className="mb-3 font-medium text-green-600">
-          ✓ Processing completed successfully
-        </p>
-      )}
-
-      {jobStatus === "failed" && (
-        <p className="mb-3 font-medium text-red-600">
-          ✕ Processing failed
-        </p>
-      )}
-
-      {jobStatus === "cancelled" && (
-        <p className="mb-3 font-medium text-orange-600">
-          ⚠ Processing cancelled
-        </p>
-      )}
-
-      {jobError && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
-          <p className="text-sm font-medium text-red-600">
-            {jobError}
-          </p>
-        </div>
-      )}
-
-      {/* CSV PREVIEW PROGRESS */}
-      {isUploading && (
-        <div className="mx-auto mt-6 w-full max-w-3xl">
-
-          <div className="mb-2 flex items-center justify-between gap-3">
-
-            <span className="text-sm sm:text-base font-medium text-slate-700">
-              Processing CSV...
-            </span>
-
-            <span className="text-sm sm:text-base font-semibold text-blue-600">
-              {progress}%
-            </span>
-
-          </div>
-
-          <div className="h-3 sm:h-4 overflow-hidden rounded-full bg-slate-200">
-
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".csv,.json,.ndjson"
+              onChange={(e) => handleFileSelect(e.target.files[0])}
+              className="hidden"
+            />
             <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-300"
-              style={{
-                width: `${progress}%`,
-              }}
-            />
-
-          </div>
-        </div>
-      )}
-
-      {/* FRONTEND TRANSFORMATION PROGRESS */}
-      {processing && (
-        <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5">
-
-          <div className="mb-3 flex items-center justify-between">
-
-            <span className="font-semibold text-slate-800">
-              Processing CSV...
-            </span>
-
-            <span className="font-bold text-blue-600">
-              {processingProgress}%
-            </span>
-
-          </div>
-
-          <div className="h-4 overflow-hidden rounded-full bg-blue-100">
-
-            <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-500"
-              style={{
-                width: `${processingProgress}%`,
-              }}
-            />
-
-          </div>
-
-          <p className="mt-3 text-sm font-medium text-slate-600">
-            {processingStatus}
-          </p>
-
-        </div>
-      )}
-
-      {/* ======================================
-          CSV TRANSFORMATION RULES
-      ====================================== */}
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-
-        <div className="mb-6">
-
-          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-            CSV Transformation Rules
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500 sm:text-base">
-            Clean and transform your CSV data before processing.
-          </p>
-
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-
-          {/* TRIM */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
-
-            <input
-              type="checkbox"
-              checked={transformRules.trim}
-              onChange={() =>
-                handleTransformRuleChange(
-                  "trim"
-                )
-              }
-              className="h-5 w-5 rounded"
-            />
-
-            <div>
-              <p className="font-medium text-slate-900">
-                Trim whitespace
-              </p>
-
-              <p className="text-sm text-slate-500">
-                Remove spaces before and after values
-              </p>
-            </div>
-
-          </label>
-
-          {/* UPPERCASE */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
-
-            <input
-              type="checkbox"
-              checked={transformRules.uppercase}
-              onChange={() => {
-                setTransformRules({
-                  ...transformRules,
-                  uppercase:
-                    !transformRules.uppercase,
-                  lowercase: false,
-                });
-              }}
-              className="h-5 w-5 rounded"
-            />
-
-            <div>
-              <p className="font-medium text-slate-900">
-                Convert to UPPERCASE
-              </p>
-
-              <p className="text-sm text-slate-500">
-                Convert text values to capital letters
-              </p>
-            </div>
-
-          </label>
-
-          {/* LOWERCASE */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
-
-            <input
-              type="checkbox"
-              checked={transformRules.lowercase}
-              onChange={() => {
-                setTransformRules({
-                  ...transformRules,
-                  lowercase:
-                    !transformRules.lowercase,
-                  uppercase: false,
-                });
-              }}
-              className="h-5 w-5 rounded"
-            />
-
-            <div>
-              <p className="font-medium text-slate-900">
-                Convert to lowercase
-              </p>
-
-              <p className="text-sm text-slate-500">
-                Convert text values to small letters
-              </p>
-            </div>
-
-          </label>
-
-          {/* REMOVE EMPTY */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50">
-
-            <input
-              type="checkbox"
-              checked={transformRules.removeEmpty}
-              onChange={() =>
-                handleTransformRuleChange(
-                  "removeEmpty"
-                )
-              }
-              className="h-5 w-5 rounded"
-            />
-
-            <div>
-              <p className="font-medium text-slate-900">
-                Remove empty rows
-              </p>
-
-              <p className="text-sm text-slate-500">
-                Remove rows that contain no data
-              </p>
-            </div>
-
-          </label>
-
-          {/* REMOVE DUPLICATES */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50 sm:col-span-2">
-
-            <input
-              type="checkbox"
-              checked={
-                transformRules.removeDuplicates
-              }
-              onChange={() =>
-                handleTransformRuleChange(
-                  "removeDuplicates"
-                )
-              }
-              className="h-5 w-5 rounded"
-            />
-
-            <div>
-              <p className="font-medium text-slate-900">
-                Remove duplicate rows
-              </p>
-
-              <p className="text-sm text-slate-500">
-                Keep only unique CSV records
-              </p>
-            </div>
-
-          </label>
-
-        </div>
-
-        {/* SELECTED COUNT */}
-        <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3">
-
-          <p className="text-sm font-medium text-slate-700">
-
-            {selectedRuleCount} rule
-            {selectedRuleCount !== 1
-              ? "s"
-              : ""}{" "}
-            selected
-
-          </p>
-
-          {selectedRuleCount > 0 && (
-            <p className="mt-1 text-xs text-slate-500">
-              Pipeline will receive:{" "}
-              {getSelectedTransformations().join(
-                ", "
-              )}
-            </p>
-          )}
-
-        </div>
-
-        {/* BUTTONS */}
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-
-          <button
-            type="button"
-            onClick={
-              applyTransformations
-            }
-            disabled={
-              !rows.length ||
-              selectedRuleCount === 0
-            }
-            className="
-              rounded-lg
-              bg-blue-600
-              px-6
-              py-3
-              font-semibold
-              text-white
-              transition
-              hover:bg-blue-700
-              disabled:cursor-not-allowed
-              disabled:bg-slate-300
-            "
-          >
-            {processing
-              ? "Processing..."
-              : "Apply Transformations"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              setTransformRules({
-                trim: false,
-                uppercase: false,
-                lowercase: false,
-                removeEmpty: false,
-                removeDuplicates: false,
-              })
-            }
-            className="
-              rounded-lg
-              border
-              border-slate-300
-              bg-white
-              px-6
-              py-3
-              font-semibold
-              text-slate-700
-              transition
-              hover:bg-slate-50
-            "
-          >
-            Reset Rules
-          </button>
-
-        </div>
-
-      </div>
-
-      {/* PIPELINE TEST */}
-      <button
-        type="button"
-        onClick={
-          testCreatePipeline
-        }
-        disabled={!columns.length}
-        className="
-          mt-4
-          rounded-lg
-          bg-purple-600
-          px-6
-          py-3
-          font-semibold
-          text-white
-          hover:bg-purple-700
-          disabled:cursor-not-allowed
-          disabled:bg-slate-300
-        "
-      >
-        Test Create Pipeline
-      </button>
-
-      {/* PIPELINE SUCCESS */}
-      {pipelineId && (
-        <div className="mt-4 rounded-lg bg-green-50 p-4">
-
-          <p className="font-semibold text-green-700">
-            Pipeline created successfully!
-          </p>
-
-          <p className="mt-1 break-all text-sm text-slate-600">
-            Pipeline ID:{" "}
-            {pipelineId}
-          </p>
-
-        </div>
-      )}
-
-      {/* BACKEND PROCESSING */}
-      {jobId && (
-        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-5">
-
-          <div className="mb-3 flex items-center justify-between">
-
-            <span className="font-semibold text-slate-800">
-              Backend Processing
-            </span>
-
-            <span className="font-bold text-green-600">
-              {wsProgress}%
-            </span>
-
-          </div>
-
-          <div className="h-4 overflow-hidden rounded-full bg-green-100">
-
-            <div
-              className="h-full rounded-full bg-green-600 transition-all duration-500"
-              style={{
-                width: `${wsProgress}%`,
-              }}
-            />
-
-          </div>
-
-          <p className="mt-3 text-sm font-medium text-slate-600">
-            {wsStatus ||
-              "Waiting for processing updates..."}
-          </p>
-
-          <div className="mt-3 flex gap-6 text-sm text-slate-600">
-
-            <span>
-              Processed:{" "}
-              <strong>
-                {processedRows}
-              </strong>
-            </span>
-
-            <span>
-              Failed:{" "}
-              <strong>
-                {failedRows}
-              </strong>
-            </span>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* ======================================
-          BULK INSERT
-      ====================================== */}
-      {rows.length > 0 && (
-        <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-
-          <div className="mb-6">
-
-            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
-              Bulk Insert
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500 sm:text-base">
-              Insert all processed CSV records into the backend at once.
-            </p>
-
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-4">
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
+              onClick={() => fileInputRef.current?.click()}
+              className="cursor-pointer space-y-3"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto">
+                <FiUploadCloud className="w-7 h-7" />
+              </div>
               <div>
-
-                <p className="text-sm text-slate-500">
-                  Records ready for insertion
-                </p>
-
-                <p className="mt-1 text-2xl font-bold text-slate-900">
-                  {rows.length}
-                </p>
-
+                <span className="text-sm font-semibold text-indigo-400">Click to choose a file</span>{" "}
+                <span className="text-sm text-slate-400">or drag & drop your dataset here</span>
               </div>
-
-              <div>
-
-                <p className="text-sm text-slate-500">
-                  Columns
-                </p>
-
-                <p className="mt-1 text-2xl font-bold text-slate-900">
-                  {columns.length}
-                </p>
-
-              </div>
-
+              <p className="text-xs text-slate-500">Supports CSV, JSON, NDJSON up to 10GB streaming upload</p>
             </div>
-
           </div>
 
-          {bulkInsertLoading && (
-            <div className="mt-5">
-
-              <div className="mb-2 flex items-center justify-between">
-
-                <span className="text-sm font-medium text-slate-700">
-                  {bulkInsertStatus}
-                </span>
-
-                <span className="text-sm font-semibold text-blue-600">
-                  {bulkInsertProgress}%
-                </span>
-
-              </div>
-
-              <div className="h-3 overflow-hidden rounded-full bg-slate-200">
-
-                <div
-                  className="h-full rounded-full bg-blue-600 transition-all duration-300"
-                  style={{
-                    width: `${bulkInsertProgress}%`,
+          {/* Config Controls if file is selected */}
+          {file && (
+            <div className="space-y-6 border-t border-slate-800 pt-6">
+              {/* File Info Banner */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FiFileText className="w-6 h-6 text-indigo-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-200">{file.name}</p>
+                    <p className="text-xs text-slate-400 font-mono">
+                      {(file.size / (1024 * 1024)).toFixed(2)} MB • {columns.length} Columns • {rows.length} Preview Rows
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setFile(null);
+                    setColumns([]);
+                    setRows([]);
                   }}
-                />
-
-              </div>
-
-            </div>
-          )}
-
-          {bulkInsertSuccess && (
-            <div className="mt-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-
-              <p className="text-sm font-medium text-green-700">
-                ✓ {bulkInsertStatus}
-              </p>
-
-            </div>
-          )}
-
-          {bulkInsertError && (
-            <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-
-              <p className="text-sm font-medium text-red-600">
-                ✕ {bulkInsertError}
-              </p>
-
-            </div>
-          )}
-
-          {!bulkInsertLoading &&
-            !bulkInsertSuccess &&
-            !bulkInsertError && (
-              <p className="mt-5 text-sm text-slate-500">
-                {rows.length} records are ready for bulk insertion.
-              </p>
-            )}
-
-          <div className="mt-5">
-
-            <button
-              type="button"
-              onClick={
-                handleBulkInsert
-              }
-              disabled={
-                bulkInsertLoading ||
-                rows.length === 0
-              }
-              className="
-                w-full
-                rounded-lg
-                bg-green-600
-                px-6
-                py-3
-                font-semibold
-                text-white
-                transition
-                hover:bg-green-700
-                disabled:cursor-not-allowed
-                disabled:bg-slate-300
-                sm:w-auto
-              "
-            >
-              {bulkInsertLoading
-                ? "Inserting Records..."
-                : "Bulk Insert Records"}
-            </button>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* ======================================
-          CSV PREVIEW
-      ====================================== */}
-      {rows.length > 0 &&
-        columns.length > 0 && (
-          <div className="mt-8 sm:mt-10">
-
-            <div
-              className="
-                mb-4
-                flex
-                flex-col
-                gap-2
-                sm:flex-row
-                sm:items-center
-                sm:justify-between
-              "
-            >
-
-              <h2
-                className="
-                  text-xl
-                  sm:text-2xl
-                  font-bold
-                  text-slate-900
-                "
-              >
-                CSV Preview
-              </h2>
-
-              <span className="text-sm sm:text-base text-slate-600">
-                {rows.length} rows ×{" "}
-                {columns.length} columns
-              </span>
-
-            </div>
-
-            <div
-              className="
-                overflow-x-auto
-                rounded-lg
-                border
-                border-slate-300
-              "
-            >
-
-              {/* HEADER */}
-              <div
-                className="
-                  flex
-                  min-w-max
-                  bg-slate-100
-                "
-              >
-
-                {columns.map(
-                  (column) => (
-                    <div
-                      key={column}
-                      className="
-                        w-[180px]
-                        sm:w-[200px]
-                        md:w-[220px]
-                        shrink-0
-                        border-b
-                        border-slate-300
-                        px-3
-                        sm:px-4
-                        py-3
-                        text-sm
-                        sm:text-base
-                        font-semibold
-                        text-slate-800
-                      "
-                    >
-                      {column}
-                    </div>
-                  )
-                )}
-
-              </div>
-
-              {/* ROWS */}
-              <div className="min-w-max">
-
-                <FixedSizeList
-                  height={500}
-                  itemCount={
-                    rows.length
-                  }
-                  itemSize={50}
-                  width={Math.max(
-                    columns.length *
-                      (window.innerWidth <
-                      640
-                        ? 180
-                        : window.innerWidth <
-                          768
-                        ? 200
-                        : 220),
-                    800
-                  )}
+                  className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                  title="Remove File"
                 >
-                  {VirtualRow}
-                </FixedSizeList>
-
+                  <FiTrash2 className="w-4 h-4" />
+                </button>
               </div>
 
+              {/* Destination & Name Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Pipeline Name</label>
+                  <input
+                    type="text"
+                    value={pipelineName}
+                    onChange={(e) => setPipelineName(e.target.value)}
+                    placeholder="e.g. User Import Pipeline"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Destination Collection</label>
+                  <input
+                    type="text"
+                    value={destinationCollection}
+                    onChange={(e) => setDestinationCollection(e.target.value)}
+                    placeholder="e.g. import_users"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-mono text-indigo-300 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Transformation Checkboxes */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <FiSliders className="text-indigo-400" /> Pre-Ingestion Data Cleanup Rules
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  {Object.entries(transformRules).map(([ruleKey, enabled]) => (
+                    <label
+                      key={ruleKey}
+                      className="flex items-center gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded-lg cursor-pointer hover:border-slate-700 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={() => handleTransformRuleChange(ruleKey)}
+                        className="w-4 h-4 accent-indigo-500 rounded"
+                      />
+                      <span className="text-slate-200 capitalize font-medium">{ruleKey}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Start Trigger */}
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleStartETL}
+                  className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <FiPlay className="w-4 h-4" />
+                  <span>{loading ? "Initializing Processing Stream..." : "Start ETL Processing Stream"}</span>
+                </button>
+              </div>
             </div>
+          )}
+        </div>
 
-            <p className="mt-3 text-xs sm:text-sm text-slate-500">
-              Virtualized table: only visible rows are rendered.
-            </p>
+        {/* Data Preview Table */}
+        {columns.length > 0 && (
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-200">Virtualized Dataset Preview ({rows.length} rows)</h3>
 
+            <div className="border border-slate-800 rounded-xl bg-slate-950 overflow-hidden">
+              <div className="overflow-x-auto border-b border-slate-800 bg-slate-900/80">
+                <div
+                  style={{ minWidth: 48 + columns.length * 192 }}
+                  className="flex items-center text-xs font-semibold text-slate-300 py-2.5"
+                >
+                  <div className="w-12 flex-shrink-0 px-3 text-right text-slate-500 border-r border-slate-800">
+                    #
+                  </div>
+                  {columns.map((col) => (
+                    <div key={col} className="w-48 flex-shrink-0 px-3 truncate text-indigo-400 border-r border-slate-800/60">
+                      {col}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <div style={{ width: Math.max(48 + columns.length * 192, 600) }}>
+                  <FixedSizeList
+                    height={400}
+                    itemCount={rows.length}
+                    itemSize={36}
+                    width={48 + columns.length * 192}
+                  >
+                    {VirtualRow}
+                  </FixedSizeList>
+                </div>
+              </div>
+            </div>
           </div>
         )}
-
-    </div>
+      </div>
+    </Layout>
   );
 }
 

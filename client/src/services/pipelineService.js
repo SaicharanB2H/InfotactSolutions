@@ -5,7 +5,22 @@ export const createPipeline = async (pipelineData) => {
   return response.data;
 };
 
-export const getPipeline = async (id) => {
+export const getAllPipelines = async () => {
+  const response = await api.get("/pipelines");
+  return response.data;
+};
+
+export const getPipelineById = async (id) => {
   const response = await api.get(`/pipelines/${id}`);
+  return response.data;
+};
+
+export const updatePipeline = async (id, pipelineData) => {
+  const response = await api.put(`/pipelines/${id}`, pipelineData);
+  return response.data;
+};
+
+export const deletePipeline = async (id) => {
+  const response = await api.delete(`/pipelines/${id}`);
   return response.data;
 };
