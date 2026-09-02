@@ -1,0 +1,7 @@
+name,email,age
+ajay,ajay@example.com,21
+rahul,rahul@example.com,22
+priya,priya@example.com,20
+invalid_user,invalid-email-address,15
+john_doe,john@domain.com,30
+jane_smith,jane@smith.org,28
